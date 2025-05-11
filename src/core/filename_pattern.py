@@ -65,7 +65,7 @@ class FilenamePatternMatcher:
                 f"Pattern match check (no_pattern) '{filename}' vs '{reference_pattern['groups'][0]}': {matches}")
             return matches
 
-        # Check if filename matches the same pattern
+        # Check if filename matches the same  pattern
         if reference_pattern['pattern']:
             match = re.match(reference_pattern['pattern'], name_without_ext)
             if match:
