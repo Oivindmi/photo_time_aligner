@@ -10,14 +10,15 @@ from typing import List
 from ..core import ExifHandler, ConfigManager, FileProcessor, TimeCalculator
 from ..utils import FileProcessingError
 from .file_scanner_thread import FileScannerThread
+from ..core.supported_formats import is_supported_format
 
 
 class PhotoDropZone(QLabel):
-    """Widget for drag and drop photo functionality"""
+    """Widget for drag and drop media functionality"""
 
     file_dropped = pyqtSignal(str)
 
-    def __init__(self, text="Drop photo here"):
+    def __init__(self, text="Drop media file here", parent=None):
         super().__init__(text)
         self.setAcceptDrops(True)
         self.setAlignment(Qt.AlignCenter)
@@ -44,12 +45,17 @@ class PhotoDropZone(QLabel):
     def dropEvent(self, event: QDropEvent):
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         if files:
-            # Only accept image files
-            if any(files[0].lower().endswith(ext) for ext in
-                   ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.raw', '.cr2', '.nef', '.arw']):
-                self.file_path = files[0]
-                self.setText(os.path.basename(files[0]))
-                self.file_dropped.emit(files[0])
+            file_path = files[0]
+
+            if is_supported_format(file_path):
+                self.file_path = file_path
+                self.setText(os.path.basename(file_path))
+                self.file_dropped.emit(file_path)
+            else:
+                ext = os.path.splitext(file_path)[1].lower()
+                QMessageBox.warning(self, "Unsupported File",
+                                    f"File type '{ext}' is not supported.")
+
         self.setStyleSheet(self.styleSheet().replace('#e6f3ff', '#f9f9f9'))
 
 
@@ -75,7 +81,7 @@ class MainWindow(QMainWindow):
         self.load_config()
 
     def init_ui(self):
-        self.setWindowTitle("Photo Time Aligner")
+        self.setWindowTitle("Photo & Video Time Aligner")
         self.setMinimumSize(900, 700)
 
         # Create central widget and main layout
@@ -88,20 +94,20 @@ class MainWindow(QMainWindow):
 
         # Reference photo section
         reference_section = QVBoxLayout()
-        reference_section.addWidget(QLabel("Reference Photo"))
-        self.reference_drop = PhotoDropZone("Drop Reference Photo")
+        reference_section.addWidget(QLabel("Reference Media"))  # Updated label
+        self.reference_drop = PhotoDropZone("Drop Reference Photo/Video", parent=self)  # Pass self as parent
         self.reference_drop.file_dropped.connect(self.load_reference_photo)
         reference_section.addWidget(self.reference_drop)
-        self.reference_info = QLabel("No photo loaded")
+        self.reference_info = QLabel("No media loaded")
         reference_section.addWidget(self.reference_info)
 
         # Target photo section
         target_section = QVBoxLayout()
-        target_section.addWidget(QLabel("Photo to Align"))
-        self.target_drop = PhotoDropZone("Drop Photo to Align")
+        target_section.addWidget(QLabel("Media to Align"))  # Updated label
+        self.target_drop = PhotoDropZone("Drop Photo/Video to Align", parent=self)  # Pass self as parent
         self.target_drop.file_dropped.connect(self.load_target_photo)
         target_section.addWidget(self.target_drop)
-        self.target_info = QLabel("No photo loaded")
+        self.target_info = QLabel("No media loaded")
         target_section.addWidget(self.target_info)
 
         drop_section.addLayout(reference_section)

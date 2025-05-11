@@ -1,3 +1,4 @@
+
 import re
 import os
 import logging
@@ -14,18 +15,25 @@ class FilenamePatternMatcher:
         """Extract pattern components from a filename"""
         name_without_ext = os.path.splitext(filename)[0]
 
-        # Common camera filename patterns
+        # Extended patterns including video-specific ones
         patterns = [
-            # DSC_1234, IMG_5678, etc.
+            # Existing photo patterns
             (r'^([A-Z]+)([_-])(\d+)$', 'prefix_separator_number'),
-            # 20220724_180710
             (r'^(\d{8})([_-])(\d{6})$', 'date_separator_time'),
-            # Photo 07-08-2022, 20 57 59
             (r'^([A-Za-z]+)\s+(\d{2}-\d{2}-\d{4}),\s+(\d{2}\s+\d{2}\s+\d{2})$', 'word_date_time'),
-            # P1234567
             (r'^([A-Z]+)(\d+)$', 'prefix_number'),
-            # Screenshot_20221224-104320_Maps
             (r'^(Screenshot)([_-])(\d{8}-\d{6})([_-])(.+)$', 'screenshot_pattern'),
+
+            # Video-specific patterns
+            (r'^(VID|MOV|MVI)([_-])(\d+)$', 'video_prefix_number'),
+            (r'^(VID|VIDEO)([_-])(\d{8})([_-])(\d{6})$', 'video_timestamp'),
+            (r'^(\d{4}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})$', 'video_date_time'),
+            (r'^(Screencast|Recording)([_-])(\d{4}-\d{2}-\d{2})([_-])(\d{2}-\d{2}-\d{2})$', 'screen_recording'),
+
+            # GoPro/Action camera patterns
+            (r'^(GH|GP|GX|GOPR)(\d+)$', 'gopro_pattern'),
+            (r'^(DJI)([_-])(\d+)$', 'dji_pattern'),
+
             # Generic: any prefix followed by numbers
             (r'^([^0-9]+)(\d+)(.*)$', 'generic')
         ]
@@ -65,13 +73,15 @@ class FilenamePatternMatcher:
                 f"Pattern match check (no_pattern) '{filename}' vs '{reference_pattern['groups'][0]}': {matches}")
             return matches
 
-        # Check if filename matches the same  pattern
+        # Check if filename matches the same pattern
         if reference_pattern['pattern']:
             match = re.match(reference_pattern['pattern'], name_without_ext)
             if match:
                 # For these patterns, we want exact prefix match
-                if reference_pattern['type'] in ['prefix_separator_number', 'prefix_number', 'screenshot_pattern',
-                                                 'generic']:
+                if reference_pattern['type'] in [
+                    'prefix_separator_number', 'prefix_number', 'screenshot_pattern',
+                    'generic', 'video_prefix_number', 'gopro_pattern', 'dji_pattern'
+                ]:
                     ref_prefix = reference_pattern['groups'][0]
                     file_prefix = match.groups()[0]
                     matches = ref_prefix == file_prefix
@@ -97,8 +107,19 @@ def _format_pattern_display(pattern_type: str, groups: tuple) -> str:
     elif pattern_type == 'prefix_number':
         return f"{groups[0]}####"
     elif pattern_type == 'screenshot_pattern':
-        # Changed from showing full filename to showing pattern
         return f"Screenshot_########-######_*"
+    elif pattern_type == 'video_prefix_number':
+        return f"{groups[0]}{groups[1]}####"
+    elif pattern_type == 'video_timestamp':
+        return f"{groups[0]}_YYYYMMDD_HHMMSS"
+    elif pattern_type == 'video_date_time':
+        return "YYYY-MM-DD HH-MM-SS"
+    elif pattern_type == 'screen_recording':
+        return f"{groups[0]}_YYYY-MM-DD_HH-MM-SS"
+    elif pattern_type == 'gopro_pattern':
+        return f"{groups[0]}####"
+    elif pattern_type == 'dji_pattern':
+        return f"{groups[0]}{groups[1]}####"
     elif pattern_type == 'generic':
         prefix = groups[0]
         return f"{prefix}####"

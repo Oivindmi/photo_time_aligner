@@ -7,6 +7,7 @@ from typing import List, Dict, Tuple
 from datetime import datetime, timedelta
 from ..utils.exceptions import FileProcessingError
 from .filename_pattern import FilenamePatternMatcher
+from .supported_formats import ALL_SUPPORTED_EXTENSIONS
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -17,10 +18,10 @@ class FileProcessor:
 
     def __init__(self, exif_handler):
         self.exif_handler = exif_handler
-        self.supported_extensions = {
-            '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.raw',
-            '.cr2', '.nef', '.arw', '.dng', '.orf', '.rw2'
-        }
+        # Use the centralized format definition
+        self.supported_extensions = ALL_SUPPORTED_EXTENSIONS
+        logger.info(f"FileProcessor initialized with {len(self.supported_extensions)} supported formats")
+
 
     def find_matching_files_batch(self, reference_file: str, use_camera_match: bool = True,
                                   use_extension_match: bool = True,

@@ -21,12 +21,17 @@ class TimeCalculator:
             original_string = date_string
             date_string = TimeCalculator._clean_date_string(date_string)
 
-            logger.debug(f"Parsing datetime - Original: '{original_string}', Cleaned: '{date_string}'")
-
-            # Skip obviously invalid date strings
-            if len(date_string) < 10:  # Minimum valid date is "YYYY-MM-DD"
-                logger.warning(f"Date string too short to be valid: '{original_string}'")
+            # Skip obviously invalid date strings (like timezone offsets or partial dates)
+            if len(date_string) < 10 or date_string in ['+00:00', '+01:00', '+02:00', '+03:00', 'UTC', 'GMT']:
+                logger.debug(f"Skipping partial/timezone string: '{original_string}'")
                 return None
+
+            # Skip numeric-only strings that are too short to be dates
+            if date_string.isdigit() and len(date_string) < 8:
+                logger.debug(f"Skipping short numeric string: '{original_string}'")
+                return None
+
+            logger.debug(f"Parsing datetime - Original: '{original_string}', Cleaned: '{date_string}'")
 
             # First try common EXIF format explicitly
             if ':' in date_string:
@@ -66,19 +71,35 @@ class TimeCalculator:
         except (ValueError, TypeError) as e:
             logger.debug(f"dateutil parsing failed: {e}, trying manual formats...")
 
-            # Try manual parsing for common EXIF formats
+            # Try manual parsing for common EXIF and video formats
             formats = [
+                # Standard EXIF formats
                 '%Y:%m:%d %H:%M:%S',
                 '%Y-%m-%d %H:%M:%S',
                 '%Y/%m/%d %H:%M:%S',
                 '%Y:%m:%d %H:%M:%S.%f',
                 '%Y-%m-%d %H:%M:%S.%f',
+
+                # Video-specific formats
+                '%Y-%m-%dT%H:%M:%S',  # ISO format
+                '%Y-%m-%dT%H:%M:%S.%f',
+                '%Y%m%d%H%M%S',  # Compact format
+                '%Y.%m.%d %H:%M:%S',  # Alternative format
+                '%d/%m/%Y %H:%M:%S',  # European format
+                '%m/%d/%Y %H:%M:%S',  # US format
+
+                # Formats with timezone (we'll strip timezone)
+                '%Y-%m-%dT%H:%M:%S%z',
+                '%Y-%m-%dT%H:%M:%S.%f%z',
             ]
 
             cleaned_original = TimeCalculator._clean_date_string(original_string)
             for fmt in formats:
                 try:
                     dt = datetime.strptime(cleaned_original, fmt)
+                    # Strip timezone if present
+                    if dt.tzinfo is not None:
+                        dt = dt.replace(tzinfo=None)
                     logger.debug(f"Successfully parsed with format {fmt}: {dt}")
                     return dt
                 except ValueError:
@@ -93,8 +114,8 @@ class TimeCalculator:
         if not isinstance(date_string, str):
             return str(date_string)
 
-        # Remove timezone information
-        cleaned = re.sub(r'[+-]\d{2}:?\d{2}$|Z$', '', date_string).strip()
+        # Remove timezone information (including various formats)
+        cleaned = re.sub(r'[+-]\d{2}:?\d{2}$|Z$|UTC|GMT', '', date_string).strip()
 
         # Don't replace T with space if we might have an EXIF format date
         if 'T' in cleaned and cleaned.count(':') < 3:
@@ -102,6 +123,10 @@ class TimeCalculator:
 
         # Remove any milliseconds beyond 6 digits
         cleaned = re.sub(r'\.(\d{6})\d+', r'.\1', cleaned)
+
+        # Clean up common video timestamp formats
+        # e.g., "2023-12-25 15:30:45 UTC" -> "2023-12-25 15:30:45"
+        cleaned = re.sub(r'\s+[A-Z]{3,4}\s*$', '', cleaned)
 
         return cleaned
 
