@@ -125,6 +125,15 @@ class MainWindow(QMainWindow):
         self.ref_extension_check.stateChanged.connect(self.update_reference_files)
         ref_layout.addWidget(self.ref_extension_check)
 
+        self.ref_pattern_check = QCheckBox("Match Filename Pattern")
+        self.ref_pattern_check.setChecked(False)
+        self.ref_pattern_check.stateChanged.connect(self.update_reference_files)
+        ref_layout.addWidget(self.ref_pattern_check)
+
+        self.ref_pattern_label = QLabel("Pattern: Not detected")
+        self.ref_pattern_label.setStyleSheet("color: #666; font-style: italic;")
+        ref_layout.addWidget(self.ref_pattern_label)
+
         self.ref_file_count = QLabel("Matching files: 0")
         ref_layout.addWidget(self.ref_file_count)
 
@@ -149,6 +158,15 @@ class MainWindow(QMainWindow):
         self.target_extension_check.setChecked(True)
         self.target_extension_check.stateChanged.connect(self.update_target_files)
         target_layout.addWidget(self.target_extension_check)
+
+        self.target_pattern_check = QCheckBox("Match Filename Pattern")
+        self.target_pattern_check.setChecked(False)
+        self.target_pattern_check.stateChanged.connect(self.update_target_files)
+        target_layout.addWidget(self.target_pattern_check)
+
+        self.target_pattern_label = QLabel("Pattern: Not detected")
+        self.target_pattern_label.setStyleSheet("color: #666; font-style: italic;")
+        target_layout.addWidget(self.target_pattern_label)
 
         self.target_file_count = QLabel("Matching files: 0")
         target_layout.addWidget(self.target_file_count)
@@ -330,16 +348,27 @@ class MainWindow(QMainWindow):
         self.ref_file_count.setText("Scanning...")
         self.ref_files_list.clear()
 
+        # Reset pattern label if pattern matching is disabled
+        if not self.ref_pattern_check.isChecked():
+            self.ref_pattern_label.setText("Pattern: Not detected")
+
         # Create and start scanner thread
         self.ref_scanner_thread = FileScannerThread(
             self.file_processor,
             self.reference_file,
             self.ref_camera_check.isChecked(),
-            self.ref_extension_check.isChecked()
+            self.ref_extension_check.isChecked(),
+            self.ref_pattern_check.isChecked()  # NEW: Pass pattern matching flag
         )
 
         self.ref_scanner_thread.files_found.connect(self._on_reference_files_found)
         self.ref_scanner_thread.error.connect(self._on_reference_scan_error)
+        self.ref_scanner_thread.status_update.connect(
+            lambda msg: self.statusBar().showMessage(msg)
+        )
+        self.ref_scanner_thread.pattern_detected.connect(  # NEW: Connect pattern detection signal
+            lambda pattern: self.ref_pattern_label.setText(f"Pattern: {pattern}")
+        )
         self.ref_scanner_thread.start()
 
     def update_target_files(self):
@@ -356,16 +385,27 @@ class MainWindow(QMainWindow):
         self.target_file_count.setText("Scanning...")
         self.target_files_list.clear()
 
+        # Reset pattern label if pattern matching is disabled
+        if not self.target_pattern_check.isChecked():
+            self.target_pattern_label.setText("Pattern: Not detected")
+
         # Create and start scanner thread
         self.target_scanner_thread = FileScannerThread(
             self.file_processor,
             self.target_file,
             self.target_camera_check.isChecked(),
-            self.target_extension_check.isChecked()
+            self.target_extension_check.isChecked(),
+            self.target_pattern_check.isChecked()  # NEW: Pass pattern matching flag
         )
 
         self.target_scanner_thread.files_found.connect(self._on_target_files_found)
         self.target_scanner_thread.error.connect(self._on_target_scan_error)
+        self.target_scanner_thread.status_update.connect(
+            lambda msg: self.statusBar().showMessage(msg)
+        )
+        self.target_scanner_thread.pattern_detected.connect(  # NEW: Connect pattern detection signal
+            lambda pattern: self.target_pattern_label.setText(f"Pattern: {pattern}")
+        )
         self.target_scanner_thread.start()
 
     def _on_reference_files_found(self, files: List[str]):
