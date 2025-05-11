@@ -9,7 +9,7 @@ from ..utils.exceptions import ExifToolNotFoundError, ExifToolError
 from .time_calculator import TimeCalculator
 
 class ExifHandler:
-    """Handles all ExifTool operations"""
+    """Handles all ExifTool operations """
 
     def __init__(self):
         self.exiftool_path = self._find_exiftool()
