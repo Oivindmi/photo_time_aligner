@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import logging
+import tempfile
 from typing import List, Dict, Tuple
 from datetime import datetime, timedelta
 from ..utils.exceptions import FileProcessingError
@@ -113,38 +114,44 @@ class FileProcessor:
             raise FileProcessingError(f"Error scanning files: {str(e)}")
 
     def _batch_filter_by_camera(self, file_paths: List[str], ref_camera_info: Dict[str, str]) -> List[str]:
-        """Filter files by camera info using batch processing"""
+        """Filter files by camera info using batch processing with argument file"""
         if not file_paths:
             return []
 
         try:
             logger.info(f"Attempting batch ExifTool processing for {len(file_paths)} files")
 
-            # Process files in chunks to avoid command line length limits
-            chunk_size = 200  # Process 200 files at a time
             matching_files = []
             excluded_by_camera = []
 
-            for i in range(0, len(file_paths), chunk_size):
-                chunk = file_paths[i:i + chunk_size]
-                logger.info(
-                    f"Processing chunk {i // chunk_size + 1}/{(len(file_paths) + chunk_size - 1) // chunk_size}")
+            # Create a temporary argument file with all file paths
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as arg_file:
+                for file_path in file_paths:
+                    arg_file.write(file_path + '\n')
+                arg_file_path = arg_file.name
 
-                # Use ExifTool in batch mode for this chunk
-                cmd = [self.exif_handler.exiftool_path, '-json', '-Make', '-Model'] + chunk
-                result = subprocess.run(cmd, capture_output=True, text=True)
+            try:
+                # Use ExifTool with argument file for all files at once
+                cmd = [
+                    self.exif_handler.exiftool_path,
+                    '-json',
+                    '-Make',
+                    '-Model',
+                    '-charset', 'filename=utf8',
+                    '-@', arg_file_path
+                ]
+
+                logger.debug(f"Batch ExifTool command: {' '.join(cmd)}")
+                logger.info(f"Processing {len(file_paths)} files in a single batch")
+
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
 
                 if result.returncode != 0:
-                    logger.warning(f"Batch ExifTool failed for chunk with return code {result.returncode}")
+                    logger.warning(f"Batch ExifTool failed with return code {result.returncode}")
                     logger.warning(f"Error message: {result.stderr}")
-                    logger.info("Falling back to individual file processing for this chunk")
-                    # Process this chunk individually
-                    chunk_matches, chunk_excluded = self._individual_filter_by_camera_with_logging(
-                        chunk, ref_camera_info, notify_fallback=True
-                    )
-                    matching_files.extend(chunk_matches)
-                    excluded_by_camera.extend(chunk_excluded)
-                    continue
+                    logger.info("Falling back to individual file processing")
+                    # Process files individually
+                    return self._individual_filter_by_camera(file_paths, ref_camera_info, notify_fallback=True)
 
                 try:
                     metadata_list = json.loads(result.stdout)
@@ -181,13 +188,15 @@ class FileProcessor:
                                 })
 
                 except json.JSONDecodeError as e:
-                    logger.error(f"Error parsing JSON for chunk: {str(e)}")
-                    # Process this chunk individually
-                    chunk_matches, chunk_excluded = self._individual_filter_by_camera_with_logging(
-                        chunk, ref_camera_info, notify_fallback=True
-                    )
-                    matching_files.extend(chunk_matches)
-                    excluded_by_camera.extend(chunk_excluded)
+                    logger.error(f"Error parsing JSON: {str(e)}")
+                    logger.info("Falling back to individual file processing")
+                    return self._individual_filter_by_camera(file_paths, ref_camera_info, notify_fallback=True)
+
+            finally:
+                # Clean up the argument file
+                if os.path.exists(arg_file_path):
+                    os.remove(arg_file_path)
+                    logger.debug(f"Cleaned up argument file: {arg_file_path}")
 
             # Log camera exclusions
             if excluded_by_camera:
@@ -204,9 +213,7 @@ class FileProcessor:
         except Exception as e:
             logger.error(f"Error in batch processing: {str(e)}")
             logger.info("Falling back to individual file processing (this may take longer)")
-            matches, _ = self._individual_filter_by_camera_with_logging(file_paths, ref_camera_info,
-                                                                        notify_fallback=True)
-            return matches
+            return self._individual_filter_by_camera(file_paths, ref_camera_info, notify_fallback=True)
 
     def _individual_filter_by_camera_with_logging(self, file_paths: List[str], ref_camera_info: Dict[str, str],
                                                   notify_fallback: bool = False) -> Tuple[List[str], List[Dict]]:
