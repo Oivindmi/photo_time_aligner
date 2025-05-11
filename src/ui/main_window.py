@@ -11,7 +11,7 @@ from ..core import ExifHandler, ConfigManager, FileProcessor, TimeCalculator
 from ..utils import FileProcessingError
 from .file_scanner_thread import FileScannerThread
 
-# test
+
 class PhotoDropZone(QLabel):
     """Widget for drag and drop photo functionality"""
 
@@ -286,23 +286,53 @@ class MainWindow(QMainWindow):
         """Load available time fields for reference photo"""
         # Clear existing radio buttons
         for radio in self.ref_time_radios.values():
-            self.ref_time_container.removeWidget(radio)
-            radio.deleteLater()
+            # Get the parent widget (container) and remove it
+            container = radio.parent()
+            self.ref_time_container.removeWidget(container)
+            container.deleteLater()
         self.ref_time_radios.clear()
 
-        # Get datetime fields
+        # Get datetime fields and raw metadata
         datetime_fields = self.exif_handler.get_datetime_fields(self.reference_file)
+        raw_metadata = self.exif_handler.read_metadata(self.reference_file)
 
         # Create radio buttons for each field
         first = True
-        for field_name, value in datetime_fields.items():
-            if value:  # Only show fields with values
-                radio = QRadioButton(f"{field_name}: {value}")
+        for field_name, parsed_value in datetime_fields.items():
+            if parsed_value:  # Only show fields with values
+                raw_value = raw_metadata.get(field_name, "")
+
+                # Create a widget to hold the radio button and labels
+                container = QWidget()
+                layout = QHBoxLayout(container)
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(10)
+
+                # Create radio button
+                radio = QRadioButton()
                 radio.setProperty("field_name", field_name)
                 radio.toggled.connect(self.calculate_time_offset)
                 self.ref_time_group.addButton(radio)
                 self.ref_time_radios[field_name] = radio
-                self.ref_time_container.addWidget(radio)
+
+                # Create labels with fixed widths
+                field_label = QLabel(f"{field_name}:")
+                field_label.setFixedWidth(150)
+
+                raw_label = QLabel(f"Raw: {raw_value}")
+                raw_label.setFixedWidth(300)
+
+                parsed_label = QLabel(f"Parsed: {parsed_value.strftime('%Y-%m-%d %H:%M:%S')}")
+                parsed_label.setFixedWidth(250)
+
+                # Add widgets to layout
+                layout.addWidget(radio)
+                layout.addWidget(field_label)
+                layout.addWidget(raw_label)
+                layout.addWidget(parsed_label)
+                layout.addStretch()
+
+                self.ref_time_container.addWidget(container)
 
                 if first:
                     radio.setChecked(True)
@@ -312,23 +342,53 @@ class MainWindow(QMainWindow):
         """Load available time fields for target photo"""
         # Clear existing radio buttons
         for radio in self.target_time_radios.values():
-            self.target_time_container.removeWidget(radio)
-            radio.deleteLater()
+            # Get the parent widget (container) and remove it
+            container = radio.parent()
+            self.target_time_container.removeWidget(container)
+            container.deleteLater()
         self.target_time_radios.clear()
 
-        # Get datetime fields
+        # Get datetime fields and raw metadata
         datetime_fields = self.exif_handler.get_datetime_fields(self.target_file)
+        raw_metadata = self.exif_handler.read_metadata(self.target_file)
 
         # Create radio buttons for each field
         first = True
-        for field_name, value in datetime_fields.items():
-            if value:  # Only show fields with values
-                radio = QRadioButton(f"{field_name}: {value}")
+        for field_name, parsed_value in datetime_fields.items():
+            if parsed_value:  # Only show fields with values
+                raw_value = raw_metadata.get(field_name, "")
+
+                # Create a widget to hold the radio button and labels
+                container = QWidget()
+                layout = QHBoxLayout(container)
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(10)
+
+                # Create radio button
+                radio = QRadioButton()
                 radio.setProperty("field_name", field_name)
                 radio.toggled.connect(self.calculate_time_offset)
                 self.target_time_group.addButton(radio)
                 self.target_time_radios[field_name] = radio
-                self.target_time_container.addWidget(radio)
+
+                # Create labels with fixed widths
+                field_label = QLabel(f"{field_name}:")
+                field_label.setFixedWidth(150)
+
+                raw_label = QLabel(f"Raw: {raw_value}")
+                raw_label.setFixedWidth(300)
+
+                parsed_label = QLabel(f"Parsed: {parsed_value.strftime('%Y-%m-%d %H:%M:%S')}")
+                parsed_label.setFixedWidth(250)
+
+                # Add widgets to layout
+                layout.addWidget(radio)
+                layout.addWidget(field_label)
+                layout.addWidget(raw_label)
+                layout.addWidget(parsed_label)
+                layout.addStretch()
+
+                self.target_time_container.addWidget(container)
 
                 if first:
                     radio.setChecked(True)
@@ -463,6 +523,10 @@ class MainWindow(QMainWindow):
 
             if ref_datetime and target_datetime:
                 self.time_offset = TimeCalculator.calculate_offset(ref_datetime, target_datetime)
+
+                # Debug line to see the raw offset
+                total_secs = self.time_offset.total_seconds()
+                self.statusBar().showMessage(f"Debug: offset = {self.time_offset}, total_seconds = {total_secs}")
 
                 # Format offset display
                 offset_str, direction = TimeCalculator.format_offset(self.time_offset)
