@@ -11,7 +11,7 @@ from ..core import ExifHandler, ConfigManager, FileProcessor, TimeCalculator
 from ..utils import FileProcessingError
 from .file_scanner_thread import FileScannerThread
 
-
+# test
 class PhotoDropZone(QLabel):
     """Widget for drag and drop photo functionality"""
 
