@@ -522,11 +522,17 @@ class MainWindow(QMainWindow):
             target_datetime = self.exif_handler.get_datetime_fields(self.target_file)[target_field]
 
             if ref_datetime and target_datetime:
+                # Calculate the offset
                 self.time_offset = TimeCalculator.calculate_offset(ref_datetime, target_datetime)
 
-                # Debug line to see the raw offset
-                total_secs = self.time_offset.total_seconds()
-                self.statusBar().showMessage(f"Debug: offset = {self.time_offset}, total_seconds = {total_secs}")
+                # Debug information
+                debug_info = (
+                    f"Reference: {ref_field} = {ref_datetime}, "
+                    f"Target: {target_field} = {target_datetime}, "
+                    f"Offset: {self.time_offset} ({self.time_offset.total_seconds()} seconds)"
+                )
+                print(debug_info)  # Print to console
+                self.statusBar().showMessage(debug_info)
 
                 # Format offset display
                 offset_str, direction = TimeCalculator.format_offset(self.time_offset)
@@ -537,7 +543,9 @@ class MainWindow(QMainWindow):
                 self.offset_label.setText(display_text)
                 self.apply_button.setEnabled(True)
         except Exception as e:
-            self.statusBar().showMessage(f"Error calculating offset: {str(e)}")
+            error_msg = f"Error calculating offset: {str(e)}"
+            print(error_msg)  # Print to console
+            self.statusBar().showMessage(error_msg)
 
     def browse_master_folder(self):
         """Browse for master folder"""

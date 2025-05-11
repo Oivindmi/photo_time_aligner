@@ -131,13 +131,11 @@ class TimeCalculator:
         # Work with absolute values for display
         abs_seconds = abs(total_seconds)
 
-        # Convert to components
+        # Calculate components directly from total seconds
         days = int(abs_seconds // 86400)
-        remaining_seconds = abs_seconds % 86400
-        hours = int(remaining_seconds // 3600)
-        remaining_seconds %= 3600
-        minutes = int(remaining_seconds // 60)
-        seconds = int(remaining_seconds % 60)
+        hours = int((abs_seconds % 86400) // 3600)
+        minutes = int((abs_seconds % 3600) // 60)
+        seconds = int(abs_seconds % 60)
 
         parts = []
         if days > 0:
