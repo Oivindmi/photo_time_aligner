@@ -11,7 +11,8 @@ from ..core import ExifHandler, ConfigManager, FileProcessor, TimeCalculator
 from ..utils import FileProcessingError
 from .file_scanner_thread import FileScannerThread
 from ..core.supported_formats import is_supported_format
-
+from datetime import datetime
+from .progress_dialog import ProgressDialog
 
 class PhotoDropZone(QLabel):
     """Widget for drag and drop media functionality"""
@@ -231,6 +232,31 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(master_folder_layout)
         main_layout.addWidget(self.move_files_check)
+
+        # Add folder organization options
+        folder_org_group = QGroupBox("Master Folder Organization")
+        folder_org_layout = QVBoxLayout()
+
+        self.folder_org_group = QButtonGroup()
+        self.org_root_radio = QRadioButton("Move to root folder")
+        self.org_root_radio.setChecked(True)  # Default option
+        self.org_camera_radio = QRadioButton("Create camera-specific subfolders")
+
+        self.folder_org_group.addButton(self.org_root_radio)
+        self.folder_org_group.addButton(self.org_camera_radio)
+
+        folder_org_layout.addWidget(self.org_root_radio)
+        folder_org_layout.addWidget(self.org_camera_radio)
+
+        folder_org_group.setLayout(folder_org_layout)
+
+        # Only show organization options when move files is checked
+        folder_org_group.setEnabled(self.move_files_check.isChecked())
+        self.move_files_check.stateChanged.connect(
+            lambda state: folder_org_group.setEnabled(state == Qt.Checked)
+        )
+
+        main_layout.addWidget(folder_org_group)
 
         # Apply button
         self.apply_button = QPushButton("Apply Alignment")
@@ -561,8 +587,215 @@ class MainWindow(QMainWindow):
 
     def apply_alignment(self):
         """Apply time alignment to all matching files"""
-        # TODO: Implement alignment logic
-        QMessageBox.information(self, "Info", "Alignment functionality coming soon!")
+        logger.info("=== Starting apply_alignment method ===")
+
+        try:
+            # Validate inputs
+            logger.info("Validating inputs...")
+
+            if not self.time_offset:
+                logger.warning("No time offset calculated")
+                QMessageBox.warning(self, "Warning", "No time offset calculated.")
+                return
+
+            logger.info(f"Time offset: {self.time_offset}")
+
+            # Get selected time fields
+            ref_field = None
+            target_field = None
+
+            logger.info("Getting selected time fields...")
+
+            for radio in self.ref_time_radios.values():
+                if radio.isChecked():
+                    ref_field = radio.property("field_name")
+                    logger.info(f"Reference field selected: {ref_field}")
+                    break
+
+            for radio in self.target_time_radios.values():
+                if radio.isChecked():
+                    target_field = radio.property("field_name")
+                    logger.info(f"Target field selected: {target_field}")
+                    break
+
+            if not (ref_field and target_field):
+                logger.warning("Time fields not selected for both groups")
+                QMessageBox.warning(self, "Warning", "Please select time fields for both groups.")
+                return
+
+            # Check if we have files to process
+            logger.info(
+                f"Reference files count: {len(self.reference_group_files) if self.reference_group_files else 0}")
+            logger.info(f"Target files count: {len(self.target_group_files) if self.target_group_files else 0}")
+
+            if not (self.reference_group_files or self.target_group_files):
+                logger.warning("No files to process")
+                QMessageBox.warning(self, "Warning", "No files to process.")
+                return
+
+            # Get master folder settings
+            logger.info("Getting master folder settings...")
+            master_folder = self.master_folder_input.text() if self.move_files_check.isChecked() else None
+            use_camera_folders = self.org_camera_radio.isChecked() if self.move_files_check.isChecked() else False
+
+            logger.info(f"Master folder: {master_folder}")
+            logger.info(f"Move files: {self.move_files_check.isChecked()}")
+            logger.info(f"Use camera folders: {use_camera_folders}")
+
+            if self.move_files_check.isChecked() and not master_folder:
+                logger.warning("Master folder not specified")
+                QMessageBox.warning(self, "Warning", "Please specify a master folder.")
+                return
+
+            # Show progress dialog
+            logger.info("Creating progress dialog...")
+            progress_dialog = ProgressDialog(self)
+            logger.info("Progress dialog created successfully")
+
+            logger.info("Showing progress dialog...")
+            progress_dialog.show()
+            logger.info("Progress dialog shown")
+
+            logger.info("Updating progress dialog status...")
+            progress_dialog.update_status("Processing files...")
+            logger.info("Progress dialog status updated")
+
+            # Record start time
+            start_time = datetime.now()
+            logger.info(f"Start time: {start_time}")
+
+            # Create processor and run
+            logger.info("Importing AlignmentProcessor and AlignmentReport...")
+            try:
+                from ..core import AlignmentProcessor, AlignmentReport
+                logger.info("Import successful")
+            except Exception as e:
+                logger.error(f"Import error: {str(e)}")
+                raise
+
+            logger.info("Creating AlignmentProcessor...")
+            processor = AlignmentProcessor(self.exif_handler, self.file_processor)
+            logger.info("AlignmentProcessor created successfully")
+
+            # Process files
+            logger.info("Starting file processing...")
+            logger.info(f"Reference files: {[os.path.basename(f) for f in self.reference_group_files]}")
+            logger.info(f"Target files: {[os.path.basename(f) for f in self.target_group_files]}")
+
+            status = processor.process_files(
+                reference_files=self.reference_group_files,
+                target_files=self.target_group_files,
+                reference_field=ref_field,
+                target_field=target_field,
+                time_offset=self.time_offset,
+                master_folder=master_folder,
+                move_files=self.move_files_check.isChecked(),
+                use_camera_folders=use_camera_folders
+            )
+
+            logger.info("File processing completed")
+
+            # Record end time
+            end_time = datetime.now()
+            logger.info(f"End time: {end_time}")
+
+            # Hide progress dialog
+            logger.info("Closing progress dialog...")
+            progress_dialog.close()
+            logger.info("Progress dialog closed")
+
+            # Generate report
+            logger.info("Creating AlignmentReport...")
+            report_generator = AlignmentReport(self.config_manager)
+            logger.info("AlignmentReport created")
+
+            logger.info("Generating console report...")
+            report_text = report_generator.generate_console_report(
+                status=status,
+                time_offset=self.time_offset,
+                start_time=start_time,
+                end_time=end_time,
+                master_folder_org="Camera-specific subfolders" if use_camera_folders else "Root folder"
+            )
+            logger.info("Console report generated")
+
+            # Print to console
+            print("\n" + report_text)
+
+            # Save log file
+            logger.info("Saving log file...")
+            log_path = report_generator.save_log_file(report_text, status)
+            if log_path:
+                logger.info(f"Log file saved to: {log_path}")
+                report_text += f"\n\nLog saved to: {log_path}"
+            else:
+                logger.warning("Failed to save log file")
+
+            # Show summary dialog
+            logger.info("Showing results dialog...")
+            self.show_results_dialog(status, report_text)
+            logger.info("Results dialog shown")
+
+            # Update UI if files were moved
+            if status.files_moved > 0 and self.reference_file:
+                logger.info("Updating UI for moved files...")
+                # Find the new path of the reference file
+                ref_filename = os.path.basename(self.reference_file)
+                new_ref_path = None
+
+                # Search in the camera folders or root
+                if use_camera_folders:
+                    for folder_path in status.camera_folders.values():
+                        potential_path = os.path.join(folder_path, ref_filename)
+                        if os.path.exists(potential_path):
+                            new_ref_path = potential_path
+                            logger.info(f"Found reference file at: {new_ref_path}")
+                            break
+                else:
+                    potential_path = os.path.join(master_folder, ref_filename)
+                    if os.path.exists(potential_path):
+                        new_ref_path = potential_path
+                        logger.info(f"Found reference file at: {new_ref_path}")
+
+                # Reload reference file from new location
+                if new_ref_path:
+                    logger.info("Reloading reference file from new location...")
+                    self.load_reference_photo(new_ref_path)
+                    logger.info("Reference file reloaded")
+
+            logger.info("=== apply_alignment method completed successfully ===")
+
+        except Exception as e:
+            import traceback
+            logger.error(f"Error during alignment: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
+            QMessageBox.critical(self, "Error", f"An error occurred during alignment:\n{str(e)}")
+
+    def show_results_dialog(self, status, report_text):
+        """Show results dialog with summary"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Alignment Results")
+        dialog.setMinimumSize(800, 600)
+
+        layout = QVBoxLayout()
+
+        # Text area with report
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(report_text)
+        text_edit.setFontFamily("Courier New")
+        layout.addWidget(text_edit)
+
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+
+        dialog.setLayout(layout)
+        dialog.exec_()
 
     def load_config(self):
         """Load saved configuration"""
