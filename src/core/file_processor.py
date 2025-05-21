@@ -126,12 +126,18 @@ class FileProcessor:
             excluded_by_camera = []
 
             # Create a temporary argument file with all file paths
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as arg_file:
-                for file_path in file_paths:
-                    arg_file.write(file_path + '\n')
-                arg_file_path = arg_file.name
-
+            arg_file_path = None
+            output_temp_file_path = None
             try:
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as arg_file:
+                    for file_path in file_paths:
+                        arg_file.write(file_path + '\n')
+                    arg_file_path = arg_file.name
+
+                # Create a temporary file for ExifTool's JSON output
+                with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False, encoding='utf-8') as output_temp_file:
+                    output_temp_file_path = output_temp_file.name
+
                 # Use ExifTool with argument file for all files at once
                 cmd = [
                     self.exif_handler.exiftool_path,
@@ -145,7 +151,8 @@ class FileProcessor:
                 logger.debug(f"Batch ExifTool command: {' '.join(cmd)}")
                 logger.info(f"Processing {len(file_paths)} files in a single batch")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+                with open(output_temp_file_path, 'w', encoding='utf-8') as output_fh:
+                    result = subprocess.run(cmd, stdout=output_fh, stderr=subprocess.PIPE, encoding='utf-8')
 
                 if result.returncode != 0:
                     logger.warning(f"Batch ExifTool failed with return code {result.returncode}")
@@ -155,7 +162,12 @@ class FileProcessor:
                     return self._individual_filter_by_camera(file_paths, ref_camera_info, notify_fallback=True)
 
                 try:
-                    metadata_list = json.loads(result.stdout)
+                    # Log the size of the output file
+                    output_size = os.path.getsize(output_temp_file_path)
+                    logger.info(f"ExifTool JSON output size: {output_size} bytes")
+
+                    with open(output_temp_file_path, 'r', encoding='utf-8') as output_fh:
+                        metadata_list = json.load(output_fh)
 
                     for metadata in metadata_list:
                         file_path = metadata.get('SourceFile')
@@ -195,9 +207,13 @@ class FileProcessor:
 
             finally:
                 # Clean up the argument file
-                if os.path.exists(arg_file_path):
+                if arg_file_path and os.path.exists(arg_file_path):
                     os.remove(arg_file_path)
                     logger.debug(f"Cleaned up argument file: {arg_file_path}")
+                # Clean up the output temporary file
+                if output_temp_file_path and os.path.exists(output_temp_file_path):
+                    os.remove(output_temp_file_path)
+                    logger.debug(f"Cleaned up output temporary file: {output_temp_file_path}")
 
             # Log camera exclusions
             if excluded_by_camera:
