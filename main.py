@@ -8,7 +8,7 @@ from src.utils import ExifToolNotFoundError
 
 # Set up logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Change from INFO to DEBUG to see detailed logging and debug information
+    level=logging.INFO,  # Change from INFO to DEBUG to see detailed logging and debug information
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -34,6 +34,9 @@ def main():
         main_window = MainWindow(config_manager, exif_handler)
         main_window.show()
 
+        # Set up cleanup handler
+        app.aboutToQuit.connect(lambda: cleanup(exif_handler))
+
     except ExifToolNotFoundError as e:
         logger.error(f"ExifTool not found: {str(e)}")
         QMessageBox.critical(
@@ -52,6 +55,17 @@ def main():
         sys.exit(1)
 
     sys.exit(app.exec_())
+
+def cleanup(exif_handler):
+    """Clean up resources before application exit"""
+    logger.info("Performing application cleanup")
+    try:
+        # Stop the ExifTool process
+        if hasattr(exif_handler, 'exiftool_process'):
+            exif_handler.exiftool_process.stop()
+            logger.info("ExifTool process stopped")
+    except Exception as e:
+        logger.error(f"Error during cleanup: {str(e)}")
 
 
 if __name__ == "__main__":

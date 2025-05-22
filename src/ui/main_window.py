@@ -13,6 +13,10 @@ from .file_scanner_thread import FileScannerThread
 from ..core.supported_formats import is_supported_format
 from datetime import datetime
 from .progress_dialog import ProgressDialog
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class PhotoDropZone(QLabel):
     """Widget for drag and drop media functionality"""
@@ -275,9 +279,10 @@ class MainWindow(QMainWindow):
             self.reference_metadata = self.exif_handler.read_metadata(file_path)
             camera_info = self.exif_handler.get_camera_info(file_path)
 
-            # Update UI
+            # Update UI with camera info AND file path
             camera_str = f"{camera_info['make']} {camera_info['model']}".strip() or "Unknown Camera"
-            self.reference_info.setText(camera_str)
+            folder_path = os.path.dirname(file_path)
+            self.reference_info.setText(f"{camera_str}\nPath: {folder_path}")
 
             # Load time fields
             self.load_time_fields_for_reference()
@@ -298,9 +303,10 @@ class MainWindow(QMainWindow):
             self.target_metadata = self.exif_handler.read_metadata(file_path)
             camera_info = self.exif_handler.get_camera_info(file_path)
 
-            # Update UI
+            # Update UI with camera info AND file path
             camera_str = f"{camera_info['make']} {camera_info['model']}".strip() or "Unknown Camera"
-            self.target_info.setText(camera_str)
+            folder_path = os.path.dirname(file_path)
+            self.target_info.setText(f"{camera_str}\nPath: {folder_path}")
 
             # Load time fields
             self.load_time_fields_for_target()
@@ -439,6 +445,7 @@ class MainWindow(QMainWindow):
         # Update UI to show scanning
         self.ref_file_count.setText("Scanning...")
         self.ref_files_list.clear()
+        self.reference_group_files = []  # Clear the existing files list
 
         # Reset pattern label if pattern matching is disabled
         if not self.ref_pattern_check.isChecked():
@@ -450,17 +457,22 @@ class MainWindow(QMainWindow):
             self.reference_file,
             self.ref_camera_check.isChecked(),
             self.ref_extension_check.isChecked(),
-            self.ref_pattern_check.isChecked()  # NEW: Pass pattern matching flag
+            self.ref_pattern_check.isChecked()
         )
 
-        self.ref_scanner_thread.files_found.connect(self._on_reference_files_found)
+        # Connect to new incremental signals
+        self.ref_scanner_thread.file_found.connect(self._on_reference_file_found)
+        self.ref_scanner_thread.scanning_complete.connect(self._on_reference_scanning_complete)
+
+        # Keep existing signal connections for compatibility
         self.ref_scanner_thread.error.connect(self._on_reference_scan_error)
         self.ref_scanner_thread.status_update.connect(
             lambda msg: self.statusBar().showMessage(msg)
         )
-        self.ref_scanner_thread.pattern_detected.connect(  # NEW: Connect pattern detection signal
+        self.ref_scanner_thread.pattern_detected.connect(
             lambda pattern: self.ref_pattern_label.setText(f"Pattern: {pattern}")
         )
+
         self.ref_scanner_thread.start()
 
     def update_target_files(self):
@@ -476,6 +488,7 @@ class MainWindow(QMainWindow):
         # Update UI to show scanning
         self.target_file_count.setText("Scanning...")
         self.target_files_list.clear()
+        self.target_group_files = []  # Clear the existing files list
 
         # Reset pattern label if pattern matching is disabled
         if not self.target_pattern_check.isChecked():
@@ -487,21 +500,51 @@ class MainWindow(QMainWindow):
             self.target_file,
             self.target_camera_check.isChecked(),
             self.target_extension_check.isChecked(),
-            self.target_pattern_check.isChecked()  # NEW: Pass pattern matching flag
+            self.target_pattern_check.isChecked()
         )
 
-        self.target_scanner_thread.files_found.connect(self._on_target_files_found)
+        # Connect to new incremental signals
+        self.target_scanner_thread.file_found.connect(self._on_target_file_found)
+        self.target_scanner_thread.scanning_complete.connect(self._on_target_scanning_complete)
+
+        # Keep existing signal connections for compatibility
         self.target_scanner_thread.error.connect(self._on_target_scan_error)
         self.target_scanner_thread.status_update.connect(
             lambda msg: self.statusBar().showMessage(msg)
         )
-        self.target_scanner_thread.pattern_detected.connect(  # NEW: Connect pattern detection signal
+        self.target_scanner_thread.pattern_detected.connect(
             lambda pattern: self.target_pattern_label.setText(f"Pattern: {pattern}")
         )
+
         self.target_scanner_thread.start()
 
+    def _on_reference_file_found(self, file_path: str):
+        """Handle individual file found by reference scanner thread"""
+        self.reference_group_files.append(file_path)
+        self.ref_files_list.addItem(os.path.basename(file_path))
+        self.ref_file_count.setText(f"Matching files: {len(self.reference_group_files)}")
+
+    def _on_target_file_found(self, file_path: str):
+        """Handle individual file found by target scanner thread"""
+        self.target_group_files.append(file_path)
+        self.target_files_list.addItem(os.path.basename(file_path))
+        self.target_file_count.setText(f"Matching files: {len(self.target_group_files)}")
+
+    def _on_reference_scanning_complete(self):
+        """Handle completion of reference file scanning"""
+        logger.info(f"Reference scanning complete, found {len(self.reference_group_files)} matching files")
+        # Sort the files list to maintain consistent order
+        self.reference_group_files.sort()
+
+    def _on_target_scanning_complete(self):
+        """Handle completion of target file scanning"""
+        logger.info(f"Target scanning complete, found {len(self.target_group_files)} matching files")
+        # Sort the files list to maintain consistent order
+        self.target_group_files.sort()
+
+    # Keep existing methods for backward compatibility
     def _on_reference_files_found(self, files: List[str]):
-        """Handle files found by scanner thread"""
+        """Handle files found by scanner thread (legacy method)"""
         self.reference_group_files = files
         self.ref_files_list.clear()
         for file_path in files:
@@ -514,7 +557,7 @@ class MainWindow(QMainWindow):
         self.ref_file_count.setText("Error scanning files")
 
     def _on_target_files_found(self, files: List[str]):
-        """Handle files found by scanner thread"""
+        """Handle files found by scanner thread (legacy method)"""
         self.target_group_files = files
         self.target_files_list.clear()
         for file_path in files:
@@ -736,32 +779,8 @@ class MainWindow(QMainWindow):
             self.show_results_dialog(status, report_text)
             logger.info("Results dialog shown")
 
-            # Update UI if files were moved
-            if status.files_moved > 0 and self.reference_file:
-                logger.info("Updating UI for moved files...")
-                # Find the new path of the reference file
-                ref_filename = os.path.basename(self.reference_file)
-                new_ref_path = None
-
-                # Search in the camera folders or root
-                if use_camera_folders:
-                    for folder_path in status.camera_folders.values():
-                        potential_path = os.path.join(folder_path, ref_filename)
-                        if os.path.exists(potential_path):
-                            new_ref_path = potential_path
-                            logger.info(f"Found reference file at: {new_ref_path}")
-                            break
-                else:
-                    potential_path = os.path.join(master_folder, ref_filename)
-                    if os.path.exists(potential_path):
-                        new_ref_path = potential_path
-                        logger.info(f"Found reference file at: {new_ref_path}")
-
-                # Reload reference file from new location
-                if new_ref_path:
-                    logger.info("Reloading reference file from new location...")
-                    self.load_reference_photo(new_ref_path)
-                    logger.info("Reference file reloaded")
+            # Reload files after alignment to show updated metadata
+            self.reload_files_after_alignment(status, master_folder, use_camera_folders)
 
             logger.info("=== apply_alignment method completed successfully ===")
 
@@ -832,3 +851,80 @@ class MainWindow(QMainWindow):
         self.config_manager.set('move_to_master', self.move_files_check.isChecked())
         self.config_manager.save()
         event.accept()
+
+    def reload_files_after_alignment(self, status, master_folder, use_camera_folders):
+        """Reload files after alignment to show updated metadata"""
+        logger.info("Reloading files after alignment...")
+
+        # Remember the original file paths
+        ref_path = self.reference_file
+        target_path = self.target_file
+
+        # If files were moved, update paths to new locations
+        if self.move_files_check.isChecked() and master_folder:
+            # Update reference file path if it was moved
+            if ref_path:
+                ref_filename = os.path.basename(ref_path)
+                new_ref_path = None
+
+                if use_camera_folders:
+                    # Check camera folders for the file
+                    for folder_name, folder_path in status.camera_folders.items():
+                        potential_path = os.path.join(folder_path, ref_filename)
+                        if os.path.exists(potential_path):
+                            new_ref_path = potential_path
+                            logger.info(f"Found reference file at: {new_ref_path}")
+                            break
+                else:
+                    # Check in master folder root
+                    potential_path = os.path.join(master_folder, ref_filename)
+                    if os.path.exists(potential_path):
+                        new_ref_path = potential_path
+                        logger.info(f"Found reference file at: {new_ref_path}")
+
+                if new_ref_path:
+                    ref_path = new_ref_path
+
+            # Update target file path if it was moved
+            if target_path:
+                target_filename = os.path.basename(target_path)
+                new_target_path = None
+
+                if use_camera_folders:
+                    # Check camera folders for the file
+                    for folder_name, folder_path in status.camera_folders.items():
+                        potential_path = os.path.join(folder_path, target_filename)
+                        if os.path.exists(potential_path):
+                            new_target_path = potential_path
+                            logger.info(f"Found target file at: {new_target_path}")
+                            break
+                else:
+                    # Check in master folder root
+                    potential_path = os.path.join(master_folder, target_filename)
+                    if os.path.exists(potential_path):
+                        new_target_path = potential_path
+                        logger.info(f"Found target file at: {new_target_path}")
+
+                if new_target_path:
+                    target_path = new_target_path
+
+        # Clear UI
+        self.ref_files_list.clear()
+        self.target_files_list.clear()
+        self.reference_group_files = []
+        self.target_group_files = []
+
+        # Reload files if they exist
+        if ref_path and os.path.exists(ref_path):
+            logger.info(f"Reloading reference file: {ref_path}")
+            self.load_reference_photo(ref_path)
+        else:
+            logger.warning(f"Cannot reload reference file, not found: {ref_path}")
+            self.reference_info.setText("No media loaded (file moved/deleted)")
+
+        if target_path and os.path.exists(target_path):
+            logger.info(f"Reloading target file: {target_path}")
+            self.load_target_photo(target_path)
+        else:
+            logger.warning(f"Cannot reload target file, not found: {target_path}")
+            self.target_info.setText("No media loaded (file moved/deleted)")
