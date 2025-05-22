@@ -6,7 +6,7 @@ from .file_processor import FileProcessor
 from .time_calculator import TimeCalculator
 from .filename_pattern import FilenamePatternMatcher
 from .alignment_processor import AlignmentProcessor, ProcessingStatus
-
+from .alignment_report import AlignmentReport
 __all__ = [
     'ExifHandler',
     'ConfigManager',
@@ -14,5 +14,6 @@ __all__ = [
     'TimeCalculator',
     'FilenamePatternMatcher',
     'AlignmentProcessor',
-    'ProcessingStatus'
+    'ProcessingStatus',
+    'AlignmentReport'  # Add this line
 ]

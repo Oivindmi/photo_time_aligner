@@ -9,11 +9,16 @@ logger = logging.getLogger(__name__)
 class FileScannerThread(QThread):
     """Worker thread for file scanning"""
 
+    # Original signals (kept for backward compatibility)
     files_found = pyqtSignal(list)
     error = pyqtSignal(str)
     progress = pyqtSignal(int)
     status_update = pyqtSignal(str)
-    pattern_detected = pyqtSignal(str)  # New signal for pattern display
+    pattern_detected = pyqtSignal(str)
+
+    # New signals for incremental file discovery
+    file_found = pyqtSignal(str)  # Emits one file at a time
+    scanning_complete = pyqtSignal()  # Signals when scanning is complete
 
     def __init__(self, file_processor, reference_file: str,
                  use_camera: bool, use_extension: bool, use_pattern: bool):
@@ -35,11 +40,19 @@ class FileScannerThread(QThread):
                 )
                 self.pattern_detected.emit(pattern['display'])
 
-            # Call the batch processing method
-            matching_files = self.file_processor.find_matching_files_batch(
-                self.reference_file, self.use_camera, self.use_extension, self.use_pattern
+            # Use the new incremental method instead of batch method
+            # This emits files one by one instead of returning a large list
+            self.file_processor.find_matching_files_incremental(
+                self.reference_file,
+                self.use_camera,
+                self.use_extension,
+                self.use_pattern,
+                self.file_found  # Pass the signal to emit files
             )
-            self.files_found.emit(matching_files)
+
+            # Signal completion when all files have been processed
+            self.scanning_complete.emit()
+
         except Exception as e:
             logger.error(f"Error in file scanner thread: {str(e)}")
             self.error.emit(str(e))

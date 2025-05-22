@@ -1,9 +1,11 @@
+
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Tuple
 from .alignment_processor import ProcessingStatus
 from .time_calculator import TimeCalculator
+
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ class AlignmentReport:
     def __init__(self, config_manager):
         self.config_manager = config_manager
 
-    def generate_console_report(self, status: ProcessingStatus, time_offset: datetime.timedelta,
+    def generate_console_report(self, status: ProcessingStatus, time_offset: timedelta,
                                 start_time: datetime, end_time: datetime,
                                 master_folder_org: str = "Root folder") -> str:
         """Generate a formatted console report"""

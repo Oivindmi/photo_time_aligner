@@ -44,6 +44,13 @@ class AlignmentProcessor:
                       master_folder: Optional[str] = None,
                       move_files: bool = False,
                       use_camera_folders: bool = False) -> ProcessingStatus:
+        """
+        Process reference and target files with appropriate time adjustments.
+
+        1. Reference files: Synchronize fields (no offset)
+        2. Target files: Apply offset and synchronize fields
+        3. Move files if requested
+        """
         logger.info("AlignmentProcessor.process_files called")
         logger.info(f"Parameters: ref_files={len(reference_files)}, target_files={len(target_files)}")
         logger.info(f"Fields: ref_field={reference_field}, target_field={target_field}")
@@ -54,19 +61,44 @@ class AlignmentProcessor:
         all_files = reference_files + target_files
         self.status.total_files = len(all_files)
 
-        # Create groups with their respective fields
-        groups = [
-            (reference_files, reference_field, "Reference Group"),
-            (target_files, target_field, "Target Group")
-        ]
+        # Phase 1: Update reference files (synchronize fields, no offset)
+        logger.info("=== Updating reference files (synchronizing fields only, no offset) ===")
+        reference_results = self.file_processor.apply_time_offset(
+            reference_files,
+            reference_field,
+            0  # No offset for reference files
+        )
 
-        # Phase 1: Update metadata
-        logger.info("Starting metadata updates...")
-        for files, selected_field, group_name in groups:
-            logger.info(f"Processing {group_name} with {len(files)} files")
-            self._update_metadata_batch(files, selected_field, time_offset, group_name)
+        # Update status based on reference results
+        for file_path, success in reference_results.items():
+            self.status.processed_files += 1
+            if success:
+                self.status.metadata_updated += 1
+            else:
+                self.status.metadata_errors.append(
+                    (file_path, "Failed to update metadata")
+                )
 
-        # Phase 2: Move files if requested
+        # Phase 2: Update target files (apply NEGATIVE offset to adjust them)
+        offset_seconds = time_offset.total_seconds()
+        logger.info(f"=== Updating target files (applying offset: {-offset_seconds} seconds) ===")
+        target_results = self.file_processor.apply_time_offset(
+            target_files,
+            target_field,
+            -offset_seconds  # NEGATIVE offset to make target match reference
+        )
+
+        # Update status based on target results
+        for file_path, success in target_results.items():
+            self.status.processed_files += 1
+            if success:
+                self.status.metadata_updated += 1
+            else:
+                self.status.metadata_errors.append(
+                    (file_path, "Failed to update metadata")
+                )
+
+        # Phase 3: Move files if requested
         if move_files and master_folder:
             logger.info("Starting file move operations...")
             self._move_files_batch(all_files, master_folder, use_camera_folders)
