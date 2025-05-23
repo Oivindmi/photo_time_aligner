@@ -582,7 +582,7 @@ class MainWindow(QMainWindow):
                 display_text += f"Target photo is {direction} reference photo"
 
                 self.offset_label.setText(display_text)
-                self.apply_button.setEnabled(True)
+                self.apply_button.setEnabled(True)  # Always enable, even for zero offset
         except Exception as e:
             self.statusBar().showMessage(f"Error calculating offset: {str(e)}")
 
@@ -598,8 +598,14 @@ class MainWindow(QMainWindow):
 
         try:
             # Validate inputs
-            if not self.time_offset:
-                QMessageBox.warning(self, "Warning", "No time offset calculated.")
+            # Remove this check:
+            # if not self.time_offset:
+            #     QMessageBox.warning(self, "Warning", "No time offset calculated.")
+            #     return
+
+            # Instead, ensure time_offset is set (it could be zero)
+            if self.time_offset is None:
+                QMessageBox.warning(self, "Warning", "Please load both photos first.")
                 return
 
             # Get selected time fields
