@@ -45,14 +45,41 @@ The application supports a comprehensive range of photo and video formats:
 pip install -r requirements.txt
 ```
 
-This will install:
-- PyQt5: For the GUI interface
-- python-dateutil: For parsing various date formats
-- ijson: For efficient streaming JSON parsing
-
 2. Ensure ExifTool is properly installed and available (see ExifTool Installation section)
 
+## Usage
+
+### Basic Workflow
+1. Launch the application
+2. Drag and drop a reference photo from one camera
+3. Drag and drop a photo to align from another camera
+4. Select which time fields to use for synchronization
+5. Configure group selection rules (camera model, file extension, filename pattern)
+6. Review the calculated time offset
+7. Optionally set a master folder for organized output
+8. Click "Apply Alignment" to synchronize all matching photos
+
+### Group Selection Rules
+The application identifies which files belong together using configurable rules:
+- **Camera Model**: Match files from the same camera make/model
+- **File Extension**: Match files with the same file type
+- **Filename Pattern**: Match files with similar naming conventions (e.g., DSC_####, IMG_####)
+
+All rules can be combined for precise file selection.
+
+### Time Field Synchronization
+The application handles time synchronization as follows:
+- **Reference Group**: Selected time field remains unchanged; all other populated fields sync to it
+- **Target Group**: Selected time field is adjusted by the calculated offset; all other fields sync to the adjusted time
+- **Empty Fields**: Never populated - only existing time fields are updated
+
 ## Architecture Overview
+
+### Core Design Principles
+- **Minimal Dependencies**: Only essential libraries (PyQt5, python-dateutil, ExifTool)
+- **No Over-Engineering**: No caching, database, or complex threading beyond UI responsiveness
+- **User-Friendly Flow**: Drag & drop interface with clear visual feedback
+- **Continuous Operation**: Can process multiple batches without restarting
 
 ### Performance Optimizations
 
@@ -76,3 +103,6 @@ For detailed technical documentation, see:
 - [Design Decisions](docs/DESIGN_DECISIONS.md)
 - [ExifTool Implementation Guide](docs/EXIFTOOL_IMPLEMENTATION.md)
 - [Architecture Decision Records](docs/adr/)
+
+## License
+MIT License
