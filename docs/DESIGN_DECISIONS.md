@@ -1,59 +1,171 @@
 # Photo Time Aligner - Design Decisions and Architecture
 
-## ExifTool Integration Architecture
+## Overview
+This document captures the key design decisions made during the development of Photo Time Aligner, explaining the rationale behind architectural choices and their impact on the final implementation.
 
-### Problem: Stack Overflow with Large File Sets
+## Core Design Philosophy
+
+### Simplicity First
+- **Decision**: Keep the codebase minimal and focused
+- **Rationale**: Avoid over-engineering for a specialized tool
+- **Impact**: No unnecessary caching, database, or complex abstractions
+
+### User Experience Priority
+- **Decision**: Continuous drag-and-drop operation
+- **Rationale**: Users often process multiple photo sets in one session
+- **Impact**: UI remains ready for new photos after each operation
+
+## User Interface Decisions
+
+### Drag & Drop Interface
+- **Decision**: Single window with two drop zones
+- **Options Considered**:
+  - Sequential file selection via context menu
+  - Clipboard-based selection
+  - System tray monitoring
+  - Drag & drop window (chosen)
+- **Rationale**: Most intuitive for comparing two photos side-by-side
+- **Impact**: Clear visual metaphor for the alignment process
+
+### No Preview Window
+- **Decision**: Removed preview functionality
+- **Rationale**: Users trust the calculation; preview adds complexity
+- **Impact**: Simpler UI and codebase
+
+### Real-time Offset Calculation
+- **Decision**: Calculate offset immediately when fields are selected
+- **Rationale**: Instant feedback improves user confidence
+- **Impact**: No need for separate "Calculate" button
+
+## File Processing Architecture
+
+### Group Identification Strategy
+- **Decision**: Three independent, combinable filters
+- **Implementation**:
+  1. Camera Model (primary)
+  2. File Extension (secondary)
+  3. Filename Pattern (tertiary)
+- **Rationale**: Handles various scenarios (missing EXIF, mixed folders)
+- **Impact**: Flexible matching without complex cascading logic
+
+### Filename Pattern Matching
+- **Decision**: Smart pattern learning with manual toggle
+- **Rationale**: Screenshots and some cameras lack EXIF data
+- **Implementation**: Detects patterns like DSC_####, IMG_####, Screenshot_*
+- **Impact**: Enables processing of files without camera metadata
+
+### Empty Camera Metadata Handling
+- **Decision**: Empty metadata matches only other empty metadata
+- **Rationale**: Prevents false positives in mixed folders
+- **Impact**: Accurate grouping for screenshots and metadata-less files
+
+## Time Synchronization Logic
+
+### Field Synchronization Approach
+- **Decision**: Sync all fields within each file to selected field
+- **Rationale**: Maintains consistency within individual files
+- **Implementation**:
+  - Reference files: All fields → selected field value
+  - Target files: All fields → (selected field + offset)
+- **Impact**: Preserves relative timestamps between files
+
+### Timezone Handling
+- **Decision**: Strip all timezone information
+- **Rationale**: Avoid offset-naive vs offset-aware datetime errors
+- **Impact**: Simplified time calculations, consistent behavior
+
+### Empty Field Policy
+- **Decision**: Never populate empty/missing fields
+- **Rationale**: Respect original file structure
+- **Impact**: Non-destructive updates only
+
+## Performance and Scalability
+
+### Threading Architecture
+- **Decision**: QThread for file scanning only
+- **Rationale**: Keep UI responsive during long operations
+- **Impact**: Smooth user experience with large folders
+
+### ExifTool Integration Evolution
+
+#### Problem: Stack Overflow with Large File Sets
 - **Issue**: Application crashed with stack overflow error (0xC0000409) when processing 50+ files
 - **Root Cause**: Large JSON responses from ExifTool were causing recursive parsing to exceed stack limits
-- **Impact**: Application became unusable for real-world file quantities
 
-### Solution Evolution
+#### Solution: Hybrid Approach
+1. **Persistent Process**: Single ExifTool instance eliminates startup overhead
+2. **Argument Files**: Use `-@` flag for reliable Windows path handling
+3. **Batch Processing**: Process files in chunks of 50
+4. **Incremental Updates**: Emit results progressively
 
-#### Phase 1: Incremental Processing
-- **Approach**: Changed from bulk file returns to incremental file emission via Qt signals
-- **Reasoning**: Avoid returning large lists across thread boundaries
-- **Implementation**: Files processed in micro-batches (2 files) and emitted individually
-- **Result**: Fixed stack overflow but introduced performance issues
+#### Performance Characteristics
+- **File Discovery**: ~5-10x faster with persistent process
+- **Metadata Updates**: ~3-5x faster than individual calls
+- **Memory Usage**: Constant regardless of file count
+- **Scalability**: Tested with 500+ files successfully
 
-#### Phase 2: Performance Optimization Attempt
-- **Approach**: Implemented persistent ExifTool process using `-stay_open` feature
-- **Reasoning**: Eliminate process startup overhead (5-10x performance improvement expected)
-- **Challenges**: Windows inter-process communication issues, complex protocol management
-- **Result**: Reliability issues, empty outputs, process hanging
+### Windows-Specific Optimizations
+- **Decision**: Handle command line length limits
+- **Implementation**: Chunk processing when paths exceed 32KB
+- **Impact**: Reliable operation with large folders
 
-#### Phase 3: Hybrid Solution (Final)
-- **Approach**: Persistent process + argument file method
-- **Key Insights**:
-  1. Original code used temporary argument files (`-@` flag) - proven reliable on Windows
-  2. Batch processing multiple files in single ExifTool calls was effective
-  3. Simple subprocess.run() calls avoided communication complexity
-- **Implementation**: Combined persistent process performance with reliable argument file pattern
-- **Result**: Best of both worlds - performance + reliability
+## Error Handling and Recovery
 
-### Architecture Decisions
+### Graceful Degradation
+- **Decision**: Fallback from batch to individual processing
+- **Rationale**: Better to be slow than to fail
+- **Impact**: Reliable operation even with problematic files
 
-#### Why Persistent Process?
-- **Pro**: Eliminates ExifTool startup overhead (~200ms per call)
-- **Pro**: Significant performance improvement for multiple operations
-- **Con**: More complex error handling and process management
-- **Decision**: Worth the complexity for the performance gains
+### Comprehensive Logging
+- **Decision**: Detailed logging with multiple levels
+- **Implementation**: Console + file logging with DEBUG option
+- **Impact**: Easier troubleshooting and user support
 
-#### Why Argument Files Over Command Line Arguments?
-- **Pro**: Handles file paths with spaces and special characters reliably
-- **Pro**: No command-line length limitations
-- **Pro**: Proven approach that worked in original implementation
-- **Pro**: Windows-compatible without escaping issues
-- **Decision**: Use `-@` pattern for all ExifTool operations
+### Process Recovery
+- **Decision**: Automatic ExifTool restart on failure
+- **Rationale**: Long-running operations shouldn't fail completely
+- **Impact**: Robust operation over extended sessions
 
-#### Why Incremental UI Updates?
-- **Pro**: Prevents stack overflow with large datasets
-- **Pro**: More responsive UI during file discovery
-- **Pro**: Better user experience with progress indication
-- **Con**: Slightly more complex signal/slot handling
-- **Decision**: Essential for scalability and user experience
+## Configuration and Persistence
 
-### Performance Characteristics
-- **File Discovery**: ~5-10x faster than original (persistent process)
-- **Metadata Updates**: ~3-5x faster than original
-- **Memory Usage**: Constant memory usage regardless of file count
-- **Scalability**: Tested with 100+ files without issues
+### Settings Storage
+- **Decision**: JSON file in AppData
+- **Rationale**: Simple, human-readable, portable
+- **Impact**: Easy backup and troubleshooting
+
+### No Auto-Update
+- **Decision**: Manual updates only
+- **Rationale**: Simplicity and user control
+- **Impact**: Predictable behavior, no surprise changes
+
+## Media Format Support
+
+### Comprehensive Format Coverage
+- **Decision**: Support 50+ photo and video formats
+- **Rationale**: Users have diverse camera equipment
+- **Impact**: Single tool for all media types
+
+### Uniform Processing
+- **Decision**: Treat photos and videos identically
+- **Implementation**: ExifTool handles both transparently
+- **Impact**: No special cases in code
+
+## Abandoned Approaches
+
+### Database Storage
+- **Considered**: SQLite for metadata caching
+- **Rejected**: Unnecessary complexity for single-session tool
+
+### Complex Threading
+- **Considered**: Worker pools for parallel processing
+- **Rejected**: ExifTool batch mode sufficient
+
+### Automatic Backup
+- **Considered**: Backup before modification
+- **Rejected**: User preference for speed over safety
+
+### Recursive Folder Scanning
+- **Considered**: Process subfolders automatically
+- **Rejected**: User wants explicit control
+
+These design decisions resulted in a focused, reliable tool that solves a specific problem well without unnecessary complexity.
