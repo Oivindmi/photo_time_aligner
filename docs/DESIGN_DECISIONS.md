@@ -104,6 +104,28 @@ This document captures the key design decisions made during the development of P
 - **Memory Usage**: Constant regardless of file count
 - **Scalability**: Tested with 500+ files successfully
 
+### Performance Optimization Evolution (May 2024)
+
+#### Problem: Single Process Bottleneck
+- **Issue**: Single ExifTool process limited throughput to ~10 files/second
+- **Root Cause**: Sequential processing with process startup overhead
+
+#### Solution: Process Pool Architecture
+1. **ExifTool Process Pool**: 3 concurrent processes handle operations in parallel
+2. **Async Directory Scanning**: Using `os.scandir` and asyncio for I/O operations
+3. **Batch Metadata Operations**: Process files in groups of 20
+4. **Removed Caching Layer**: Simplified architecture by removing the caching layer that caused recursion issues
+
+#### Performance Improvements
+- **Before**: 50 files in ~5 seconds (10 files/second)
+- **After**: 50 files in ~1 second (50 files/second)
+- **Large Folders**: 1000+ files processed without UI freezing
+
+### Architecture Simplification
+- **Decision**: Remove backward compatibility code
+- **Rationale**: Cleaner codebase, easier maintenance
+- **Impact**: All file scanning now uses async operations exclusively
+
 ### Windows-Specific Optimizations
 - **Decision**: Handle command line length limits
 - **Implementation**: Chunk processing when paths exceed 32KB

@@ -9,23 +9,58 @@ This document details the ExifTool integration in Photo Time Aligner, explaining
 
 #### ExifToolProcess Class
 **Location**: `src/core/exiftool_process.py`  
-**Purpose**: Manages persistent ExifTool process with optimized communication
+**Purpose**: Individual ExifTool process management
 
 **Key Features**:
-- Maintains single ExifTool instance throughout application lifetime
-- Uses argument files for reliable Windows path handling
-- Implements thread-safe command execution
-- Automatic process recovery on failures
+- Persistent process with -stay_open flag
+- Argument file communication for Windows compatibility
+- Automatic restart on failure
+- Thread-safe command execution
+
+#### ExifToolProcessPool Class
+**Location**: `src/core/exiftool_pool.py`  
+**Purpose**: Manages pool of ExifTool processes for concurrent operations
+
+**Key Features**:
+- Configurable pool size (default: 3 processes)
+- Thread-safe process allocation using queue
+- Context manager for automatic process return
+- Parallel batch metadata reading
+- Graceful shutdown handling
 
 #### ExifHandler Class
 **Location**: `src/core/exif_handler.py`  
-**Purpose**: High-level interface for EXIF operations
+**Purpose**: High-level interface for EXIF operations using process pool
 
 **Key Features**:
-- Abstracts ExifTool complexity from rest of application
-- Provides typed interfaces for common operations
-- Handles datetime parsing and timezone stripping
-- Manages ExifTool path discovery
+- Automatic process pool initialization
+- Simplified API for metadata operations
+- Batch processing support
+- Direct pool access (no caching layer)
+
+#### ConcurrentFileProcessor Class
+**Location**: `src/core/concurrent_file_processor.py`  
+**Purpose**: Async file operations for performance
+
+**Key Features**:
+- Asynchronous directory scanning
+- Concurrent file filtering
+- Progress callback support
+- Configurable batch sizes
+
+## Performance Architecture
+
+### Process Pool Benefits
+- Eliminates process startup overhead
+- Enables true parallel processing
+- Scales with CPU cores
+- Maintains compatibility with existing code
+
+### Async Operations
+- Non-blocking directory traversal
+- Concurrent metadata extraction
+- UI remains responsive during long operations
+- Efficient resource utilization
 
 ## Implementation Details
 
