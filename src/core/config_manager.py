@@ -22,6 +22,14 @@ class ConfigManager:
                 'y': 100,
                 'width': 900,
                 'height': 700
+            },
+            # Performance settings
+            'performance': {
+                'exiftool_pool_size': 3,
+                'cache_enabled': True,
+                'cache_size_mb': 100,
+                'batch_size': 20,
+                'max_concurrent_operations': 4
             }
         }
 
@@ -30,11 +38,23 @@ class ConfigManager:
         if self.config_file.exists():
             try:
                 with open(self.config_file, 'r') as f:
-                    return json.load(f)
+                    config = json.load(f)
+                    # Merge with defaults to ensure all keys exist
+                    default = self._default_config()
+                    return self._deep_merge(default, config)
             except (json.JSONDecodeError, IOError):
-                # If config is corrupted, return defaults
                 return self._default_config()
         return self._default_config()
+
+    def _deep_merge(self, default: Dict, override: Dict) -> Dict:
+        """Deep merge override into default"""
+        result = default.copy()
+        for key, value in override.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = self._deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
 
     def save(self):
         """Save current configuration to file"""
@@ -47,6 +67,16 @@ class ConfigManager:
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value"""
+        # Support nested keys with dot notation
+        if '.' in key:
+            keys = key.split('.')
+            value = self.config
+            for k in keys:
+                if isinstance(value, dict) and k in value:
+                    value = value[k]
+                else:
+                    return default
+            return value
         return self.config.get(key, default)
 
     def set(self, key: str, value: Any):

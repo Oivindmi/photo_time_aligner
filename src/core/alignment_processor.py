@@ -15,14 +15,12 @@ class ProcessingStatus:
         self.total_files = 0
         self.processed_files = 0
         self.metadata_updated = 0
-        self.metadata_errors = []  # List of (file_path, error_msg)
-        self.metadata_skipped = []  # List of (file_path, reason)
+        self.metadata_errors = []
+        self.metadata_skipped = []
         self.files_moved = 0
-        self.move_skipped = []  # List of (file_path, reason)
-        self.move_errors = []  # List of (file_path, error_msg)
-
-        # Track camera folders created
-        self.camera_folders = {}  # camera_id -> folder_path
+        self.move_skipped = []
+        self.move_errors = []
+        self.camera_folders = {}
 
 
 class AlignmentProcessor:
@@ -46,10 +44,6 @@ class AlignmentProcessor:
                       use_camera_folders: bool = False) -> ProcessingStatus:
         """
         Process reference and target files with appropriate time adjustments.
-
-        1. Reference files: Synchronize fields (no offset)
-        2. Target files: Apply offset and synchronize fields
-        3. Move files if requested
         """
         logger.info("AlignmentProcessor.process_files called")
         logger.info(f"Parameters: ref_files={len(reference_files)}, target_files={len(target_files)}")
@@ -105,47 +99,6 @@ class AlignmentProcessor:
 
         logger.info("AlignmentProcessor.process_files completed")
         return self.status
-
-    def _update_metadata_batch(self, files: List[str], selected_field: str,
-                               offset: timedelta, group_name: str):
-        """Update metadata for a batch of files"""
-        for file_path in files:
-            try:
-                # Check if file has the selected field
-                datetime_fields = self.exif_handler.get_datetime_fields(file_path)
-
-                if selected_field not in datetime_fields or datetime_fields[selected_field] is None:
-                    self.status.metadata_skipped.append(
-                        (file_path, f"Selected field '{selected_field}' not found")
-                    )
-                    continue
-
-                # Apply offset to the selected field
-                original_time = datetime_fields[selected_field]
-                new_time = original_time + offset
-
-                # Prepare updates for all existing fields
-                fields_to_update = {}
-                for field_name, value in datetime_fields.items():
-                    if value is not None:  # Only update existing fields
-                        fields_to_update[field_name] = new_time
-
-                # Apply updates
-                success = self.exif_handler.update_all_datetime_fields(file_path, fields_to_update)
-
-                if success:
-                    self.status.metadata_updated += 1
-                    logger.info(f"Updated {len(fields_to_update)} fields in {os.path.basename(file_path)}")
-                else:
-                    self.status.metadata_errors.append(
-                        (file_path, "Failed to update metadata")
-                    )
-
-            except Exception as e:
-                self.status.metadata_errors.append(
-                    (file_path, f"Error: {str(e)}")
-                )
-                logger.error(f"Error processing {file_path}: {str(e)}")
 
     def _move_files_batch(self, files: List[str], master_folder: str, use_camera_folders: bool):
         """Move files to master folder with optional camera-specific organization"""

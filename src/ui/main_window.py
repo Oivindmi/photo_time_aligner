@@ -99,8 +99,8 @@ class MainWindow(QMainWindow):
 
         # Reference photo section
         reference_section = QVBoxLayout()
-        reference_section.addWidget(QLabel("Reference Media"))  # Updated label
-        self.reference_drop = PhotoDropZone("Drop Reference Photo/Video", parent=self)  # Pass self as parent
+        reference_section.addWidget(QLabel("Reference Media"))
+        self.reference_drop = PhotoDropZone("Drop Reference Photo/Video", parent=self)
         self.reference_drop.file_dropped.connect(self.load_reference_photo)
         reference_section.addWidget(self.reference_drop)
         self.reference_info = QLabel("No media loaded")
@@ -108,8 +108,8 @@ class MainWindow(QMainWindow):
 
         # Target photo section
         target_section = QVBoxLayout()
-        target_section.addWidget(QLabel("Media to Align"))  # Updated label
-        self.target_drop = PhotoDropZone("Drop Photo/Video to Align", parent=self)  # Pass self as parent
+        target_section.addWidget(QLabel("Media to Align"))
+        self.target_drop = PhotoDropZone("Drop Photo/Video to Align", parent=self)
         self.target_drop.file_dropped.connect(self.load_target_photo)
         target_section.addWidget(self.target_drop)
         self.target_info = QLabel("No media loaded")
@@ -243,7 +243,7 @@ class MainWindow(QMainWindow):
 
         self.folder_org_group = QButtonGroup()
         self.org_root_radio = QRadioButton("Move to root folder")
-        self.org_root_radio.setChecked(True)  # Default option
+        self.org_root_radio.setChecked(True)
         self.org_camera_radio = QRadioButton("Create camera-specific subfolders")
 
         self.folder_org_group.addButton(self.org_root_radio)
@@ -324,7 +324,6 @@ class MainWindow(QMainWindow):
         """Load available time fields for reference photo"""
         # Clear existing radio buttons
         for radio in self.ref_time_radios.values():
-            # Get the parent widget (container) and remove it
             container = radio.parent()
             self.ref_time_container.removeWidget(container)
             container.deleteLater()
@@ -337,7 +336,7 @@ class MainWindow(QMainWindow):
         # Create radio buttons for each field
         first = True
         for field_name, parsed_value in datetime_fields.items():
-            if parsed_value:  # Only show fields with values
+            if parsed_value:
                 raw_value = raw_metadata.get(field_name, "")
 
                 # Create a widget to hold the radio button and labels
@@ -380,7 +379,6 @@ class MainWindow(QMainWindow):
         """Load available time fields for target photo"""
         # Clear existing radio buttons
         for radio in self.target_time_radios.values():
-            # Get the parent widget (container) and remove it
             container = radio.parent()
             self.target_time_container.removeWidget(container)
             container.deleteLater()
@@ -393,7 +391,7 @@ class MainWindow(QMainWindow):
         # Create radio buttons for each field
         first = True
         for field_name, parsed_value in datetime_fields.items():
-            if parsed_value:  # Only show fields with values
+            if parsed_value:
                 raw_value = raw_metadata.get(field_name, "")
 
                 # Create a widget to hold the radio button and labels
@@ -439,13 +437,13 @@ class MainWindow(QMainWindow):
 
         # Cancel previous scan if running
         if self.ref_scanner_thread and self.ref_scanner_thread.isRunning():
-            self.ref_scanner_thread.terminate()
+            self.ref_scanner_thread.stop()
             self.ref_scanner_thread.wait()
 
         # Update UI to show scanning
         self.ref_file_count.setText("Scanning...")
         self.ref_files_list.clear()
-        self.reference_group_files = []  # Clear the existing files list
+        self.reference_group_files = []
 
         # Reset pattern label if pattern matching is disabled
         if not self.ref_pattern_check.isChecked():
@@ -460,11 +458,9 @@ class MainWindow(QMainWindow):
             self.ref_pattern_check.isChecked()
         )
 
-        # Connect to new incremental signals
+        # Connect signals
         self.ref_scanner_thread.file_found.connect(self._on_reference_file_found)
         self.ref_scanner_thread.scanning_complete.connect(self._on_reference_scanning_complete)
-
-        # Keep existing signal connections for compatibility
         self.ref_scanner_thread.error.connect(self._on_reference_scan_error)
         self.ref_scanner_thread.status_update.connect(
             lambda msg: self.statusBar().showMessage(msg)
@@ -482,13 +478,13 @@ class MainWindow(QMainWindow):
 
         # Cancel previous scan if running
         if self.target_scanner_thread and self.target_scanner_thread.isRunning():
-            self.target_scanner_thread.terminate()
+            self.target_scanner_thread.stop()
             self.target_scanner_thread.wait()
 
         # Update UI to show scanning
         self.target_file_count.setText("Scanning...")
         self.target_files_list.clear()
-        self.target_group_files = []  # Clear the existing files list
+        self.target_group_files = []
 
         # Reset pattern label if pattern matching is disabled
         if not self.target_pattern_check.isChecked():
@@ -503,11 +499,9 @@ class MainWindow(QMainWindow):
             self.target_pattern_check.isChecked()
         )
 
-        # Connect to new incremental signals
+        # Connect signals
         self.target_scanner_thread.file_found.connect(self._on_target_file_found)
         self.target_scanner_thread.scanning_complete.connect(self._on_target_scanning_complete)
-
-        # Keep existing signal connections for compatibility
         self.target_scanner_thread.error.connect(self._on_target_scan_error)
         self.target_scanner_thread.status_update.connect(
             lambda msg: self.statusBar().showMessage(msg)
@@ -533,36 +527,17 @@ class MainWindow(QMainWindow):
     def _on_reference_scanning_complete(self):
         """Handle completion of reference file scanning"""
         logger.info(f"Reference scanning complete, found {len(self.reference_group_files)} matching files")
-        # Sort the files list to maintain consistent order
         self.reference_group_files.sort()
 
     def _on_target_scanning_complete(self):
         """Handle completion of target file scanning"""
         logger.info(f"Target scanning complete, found {len(self.target_group_files)} matching files")
-        # Sort the files list to maintain consistent order
         self.target_group_files.sort()
-
-    # Keep existing methods for backward compatibility
-    def _on_reference_files_found(self, files: List[str]):
-        """Handle files found by scanner thread (legacy method)"""
-        self.reference_group_files = files
-        self.ref_files_list.clear()
-        for file_path in files:
-            self.ref_files_list.addItem(os.path.basename(file_path))
-        self.ref_file_count.setText(f"Matching files: {len(files)}")
 
     def _on_reference_scan_error(self, error_msg: str):
         """Handle scanning errors"""
         self.statusBar().showMessage(f"Error scanning reference files: {error_msg}")
         self.ref_file_count.setText("Error scanning files")
-
-    def _on_target_files_found(self, files: List[str]):
-        """Handle files found by scanner thread (legacy method)"""
-        self.target_group_files = files
-        self.target_files_list.clear()
-        for file_path in files:
-            self.target_files_list.addItem(os.path.basename(file_path))
-        self.target_file_count.setText(f"Matching files: {len(files)}")
 
     def _on_target_scan_error(self, error_msg: str):
         """Handle scanning errors"""
@@ -600,15 +575,6 @@ class MainWindow(QMainWindow):
                 # Calculate the offset
                 self.time_offset = TimeCalculator.calculate_offset(ref_datetime, target_datetime)
 
-                # Debug information
-                debug_info = (
-                    f"Reference: {ref_field} = {ref_datetime}, "
-                    f"Target: {target_field} = {target_datetime}, "
-                    f"Offset: {self.time_offset} ({self.time_offset.total_seconds()} seconds)"
-                )
-                print(debug_info)  # Print to console
-                self.statusBar().showMessage(debug_info)
-
                 # Format offset display
                 offset_str, direction = TimeCalculator.format_offset(self.time_offset)
 
@@ -618,9 +584,7 @@ class MainWindow(QMainWindow):
                 self.offset_label.setText(display_text)
                 self.apply_button.setEnabled(True)
         except Exception as e:
-            error_msg = f"Error calculating offset: {str(e)}"
-            print(error_msg)  # Print to console
-            self.statusBar().showMessage(error_msg)
+            self.statusBar().showMessage(f"Error calculating offset: {str(e)}")
 
     def browse_master_folder(self):
         """Browse for master folder"""
@@ -634,97 +598,53 @@ class MainWindow(QMainWindow):
 
         try:
             # Validate inputs
-            logger.info("Validating inputs...")
-
             if not self.time_offset:
-                logger.warning("No time offset calculated")
                 QMessageBox.warning(self, "Warning", "No time offset calculated.")
                 return
-
-            logger.info(f"Time offset: {self.time_offset}")
 
             # Get selected time fields
             ref_field = None
             target_field = None
 
-            logger.info("Getting selected time fields...")
-
             for radio in self.ref_time_radios.values():
                 if radio.isChecked():
                     ref_field = radio.property("field_name")
-                    logger.info(f"Reference field selected: {ref_field}")
                     break
 
             for radio in self.target_time_radios.values():
                 if radio.isChecked():
                     target_field = radio.property("field_name")
-                    logger.info(f"Target field selected: {target_field}")
                     break
 
             if not (ref_field and target_field):
-                logger.warning("Time fields not selected for both groups")
                 QMessageBox.warning(self, "Warning", "Please select time fields for both groups.")
                 return
 
-            # Check if we have files to process
-            logger.info(
-                f"Reference files count: {len(self.reference_group_files) if self.reference_group_files else 0}")
-            logger.info(f"Target files count: {len(self.target_group_files) if self.target_group_files else 0}")
-
             if not (self.reference_group_files or self.target_group_files):
-                logger.warning("No files to process")
                 QMessageBox.warning(self, "Warning", "No files to process.")
                 return
 
             # Get master folder settings
-            logger.info("Getting master folder settings...")
             master_folder = self.master_folder_input.text() if self.move_files_check.isChecked() else None
             use_camera_folders = self.org_camera_radio.isChecked() if self.move_files_check.isChecked() else False
 
-            logger.info(f"Master folder: {master_folder}")
-            logger.info(f"Move files: {self.move_files_check.isChecked()}")
-            logger.info(f"Use camera folders: {use_camera_folders}")
-
             if self.move_files_check.isChecked() and not master_folder:
-                logger.warning("Master folder not specified")
                 QMessageBox.warning(self, "Warning", "Please specify a master folder.")
                 return
 
             # Show progress dialog
-            logger.info("Creating progress dialog...")
             progress_dialog = ProgressDialog(self)
-            logger.info("Progress dialog created successfully")
-
-            logger.info("Showing progress dialog...")
             progress_dialog.show()
-            logger.info("Progress dialog shown")
-
-            logger.info("Updating progress dialog status...")
             progress_dialog.update_status("Processing files...")
-            logger.info("Progress dialog status updated")
 
             # Record start time
             start_time = datetime.now()
-            logger.info(f"Start time: {start_time}")
 
             # Create processor and run
-            logger.info("Importing AlignmentProcessor and AlignmentReport...")
-            try:
-                from ..core import AlignmentProcessor, AlignmentReport
-                logger.info("Import successful")
-            except Exception as e:
-                logger.error(f"Import error: {str(e)}")
-                raise
-
-            logger.info("Creating AlignmentProcessor...")
+            from ..core import AlignmentProcessor, AlignmentReport
             processor = AlignmentProcessor(self.exif_handler, self.file_processor)
-            logger.info("AlignmentProcessor created successfully")
 
             # Process files
-            logger.info("Starting file processing...")
-            logger.info(f"Reference files: {[os.path.basename(f) for f in self.reference_group_files]}")
-            logger.info(f"Target files: {[os.path.basename(f) for f in self.target_group_files]}")
-
             status = processor.process_files(
                 reference_files=self.reference_group_files,
                 target_files=self.target_group_files,
@@ -736,23 +656,14 @@ class MainWindow(QMainWindow):
                 use_camera_folders=use_camera_folders
             )
 
-            logger.info("File processing completed")
-
             # Record end time
             end_time = datetime.now()
-            logger.info(f"End time: {end_time}")
 
             # Hide progress dialog
-            logger.info("Closing progress dialog...")
             progress_dialog.close()
-            logger.info("Progress dialog closed")
 
             # Generate report
-            logger.info("Creating AlignmentReport...")
             report_generator = AlignmentReport(self.config_manager)
-            logger.info("AlignmentReport created")
-
-            logger.info("Generating console report...")
             report_text = report_generator.generate_console_report(
                 status=status,
                 time_offset=self.time_offset,
@@ -760,34 +671,24 @@ class MainWindow(QMainWindow):
                 end_time=end_time,
                 master_folder_org="Camera-specific subfolders" if use_camera_folders else "Root folder"
             )
-            logger.info("Console report generated")
 
             # Print to console
             print("\n" + report_text)
 
             # Save log file
-            logger.info("Saving log file...")
             log_path = report_generator.save_log_file(report_text, status)
             if log_path:
-                logger.info(f"Log file saved to: {log_path}")
                 report_text += f"\n\nLog saved to: {log_path}"
-            else:
-                logger.warning("Failed to save log file")
 
             # Show summary dialog
-            logger.info("Showing results dialog...")
             self.show_results_dialog(status, report_text)
-            logger.info("Results dialog shown")
 
-            # Reload files after alignment to show updated metadata
+            # Reload files after alignment
             self.reload_files_after_alignment(status, master_folder, use_camera_folders)
-
-            logger.info("=== apply_alignment method completed successfully ===")
 
         except Exception as e:
             import traceback
             logger.error(f"Error during alignment: {str(e)}")
-            logger.error(f"Exception type: {type(e).__name__}")
             logger.error(f"Traceback:\n{traceback.format_exc()}")
             QMessageBox.critical(self, "Error", f"An error occurred during alignment:\n{str(e)}")
 
@@ -829,15 +730,16 @@ class MainWindow(QMainWindow):
         move_files = self.config_manager.get('move_to_master', True)
         self.move_files_check.setChecked(move_files)
 
+
     def closeEvent(self, event):
         """Save configuration on close"""
         # Terminate any running threads
         if self.ref_scanner_thread and self.ref_scanner_thread.isRunning():
-            self.ref_scanner_thread.terminate()
+            self.ref_scanner_thread.stop()
             self.ref_scanner_thread.wait()
 
         if self.target_scanner_thread and self.target_scanner_thread.isRunning():
-            self.target_scanner_thread.terminate()
+            self.target_scanner_thread.stop()
             self.target_scanner_thread.wait()
 
         # Save configuration
