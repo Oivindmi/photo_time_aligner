@@ -1,4 +1,3 @@
-
 import queue
 import threading
 import logging
@@ -11,13 +10,10 @@ logger = logging.getLogger(__name__)
 
 class ExifToolProcessPool:
     """
-    Pool of ExifTool processes for concurrent operations.
-
-    This dramatically improves performance when processing multiple files
-    by avoiding the bottleneck of a single ExifTool process.
+    Pool of ExifTool processes for concurrent operations with restart capability.
     """
 
-    def __init__(self, pool_size: int = 3, max_retries: int = 3):
+    def __init__(self, pool_size: int = 4, max_retries: int = 3):
         self.pool_size = pool_size
         self.max_retries = max_retries
         self.processes = []
@@ -45,6 +41,54 @@ class ExifToolProcessPool:
                 logger.error(f"Failed to start ExifTool process {i + 1}: {e}")
                 raise
 
+    def restart_pool(self):
+        """Restart the entire process pool to prevent process accumulation"""
+        logger.info("Restarting entire ExifTool process pool...")
+
+        with self._lock:
+            if self._shutdown:
+                return
+
+            try:
+                # Stop all existing processes
+                self._stop_all_processes()
+
+                # Clear the queue and processes list
+                while not self.available.empty():
+                    try:
+                        self.available.get_nowait()
+                    except queue.Empty:
+                        break
+
+                self.processes.clear()
+
+                # Wait a moment for processes to fully terminate
+                time.sleep(0.5)
+
+                # Reinitialize the pool
+                self._initialize_pool()
+
+                logger.info("ExifTool process pool restart completed successfully")
+
+            except Exception as e:
+                logger.error(f"Error during pool restart: {e}")
+                # Try to salvage the situation by initializing fresh processes
+                self.processes.clear()
+                while not self.available.empty():
+                    try:
+                        self.available.get_nowait()
+                    except queue.Empty:
+                        break
+                self._initialize_pool()
+
+    def _stop_all_processes(self):
+        """Stop all processes in the pool"""
+        for process in self.processes:
+            try:
+                process.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping process: {e}")
+
     @contextmanager
     def get_process(self, timeout: float = 30.0):
         """Get an available process from the pool"""
@@ -67,8 +111,6 @@ class ExifToolProcessPool:
                                      chunk_size: int = 10) -> List[Dict[str, Any]]:
         """
         Read metadata from multiple files in parallel using the process pool.
-
-        This is significantly faster than sequential processing.
         """
         if not file_paths:
             return []
@@ -107,21 +149,17 @@ class ExifToolProcessPool:
 
     def shutdown(self):
         """Shutdown all processes in the pool"""
+        logger.info("Shutting down ExifTool process pool...")
         self._shutdown = True
 
         # Stop all processes
+        self._stop_all_processes()
+
+        # Clear the queue
         while not self.available.empty():
             try:
-                process = self.available.get_nowait()
-                process.stop()
+                self.available.get_nowait()
             except queue.Empty:
                 break
 
-        # Stop any remaining processes
-        for process in self.processes:
-            try:
-                process.stop()
-            except:
-                pass
-
-        logger.info("ExifTool process pool shut down")
+        logger.info("ExifTool process pool shut down completed")

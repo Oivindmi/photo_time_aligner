@@ -8,7 +8,7 @@ from src.utils import ExifToolNotFoundError
 
 # Set up logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Change from INFO to DEBUG to see detailed logging and debug information
+    level=logging.INFO,  # Change from INFO to DEBUG to see detailed logging and debug information
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),

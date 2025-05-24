@@ -15,6 +15,8 @@ from datetime import datetime
 from .progress_dialog import ProgressDialog
 from .metadata_dialog import MetadataInvestigationDialog
 import logging
+from PyQt5.QtWidgets import QApplication, QMessageBox
+from datetime import datetime
 
 
 logger = logging.getLogger(__name__)
@@ -701,8 +703,8 @@ class MainWindow(QMainWindow):
             self.master_folder_input.setText(folder)
 
     def apply_alignment(self):
-        """Apply time alignment to all matching files"""
-        logger.info("=== Starting apply_alignment method ===")
+        """Apply time alignment to all matching files using group-based processing"""
+        logger.info("=== Starting group-based apply_alignment method ===")
 
         try:
             # Determine which offset to use
@@ -758,10 +760,18 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Warning", "Please specify a master folder.")
                 return
 
-            # Show progress dialog
-            progress_dialog = ProgressDialog(self)
-            progress_dialog.show()
-            progress_dialog.update_status("Processing files...")
+            # Show enhanced progress dialog
+            self.progress_dialog = ProgressDialog(self)
+            self.progress_dialog.show()
+
+            # Set up progress callback
+            def progress_callback(current, total, status):
+                if hasattr(self, 'progress_dialog') and self.progress_dialog:
+                    self.progress_dialog.update_progress(current, total, status)
+                    QApplication.processEvents()
+
+            # Set the progress callback on the file processor
+            self.file_processor.progress_callback = progress_callback
 
             # Record start time
             start_time = datetime.now()
@@ -770,7 +780,7 @@ class MainWindow(QMainWindow):
             from ..core import AlignmentProcessor, AlignmentReport
             processor = AlignmentProcessor(self.exif_handler, self.file_processor)
 
-            # Process files
+            # Process files using group-based approach
             status = processor.process_files(
                 reference_files=reference_files,
                 target_files=target_files,
@@ -786,7 +796,7 @@ class MainWindow(QMainWindow):
             end_time = datetime.now()
 
             # Hide progress dialog
-            progress_dialog.close()
+            self.progress_dialog.close()
 
             # Generate report
             report_generator = AlignmentReport(self.config_manager)
@@ -816,8 +826,17 @@ class MainWindow(QMainWindow):
             import traceback
             logger.error(f"Error during alignment: {str(e)}")
             logger.error(f"Traceback:\n{traceback.format_exc()}")
+
+            # Close progress dialog if it exists
+            if hasattr(self, 'progress_dialog') and self.progress_dialog:
+                self.progress_dialog.close()
+
             QMessageBox.critical(self, "Error", f"An error occurred during alignment:\n{str(e)}")
 
+        finally:
+            # Cleanup progress callback
+            if hasattr(self.file_processor, 'progress_callback'):
+                self.file_processor.progress_callback = None
     def show_results_dialog(self, status, report_text):
         """Show results dialog with summary"""
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox

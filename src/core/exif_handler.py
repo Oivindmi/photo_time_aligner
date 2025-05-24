@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ExifHandler:
     """Handles all ExifTool operations with caching and pooling"""
 
-    def __init__(self, pool_size: int = 3):
+    def __init__(self, pool_size: int = 4):
         self.exiftool_path = self._find_exiftool()
         # Use pool instead of single process
         self.exiftool_pool = ExifToolProcessPool(pool_size=pool_size)
