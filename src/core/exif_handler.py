@@ -97,6 +97,16 @@ class ExifHandler:
         """Read metadata from multiple files in parallel"""
         return self.exiftool_pool.read_metadata_batch_parallel(file_paths)
 
+    def get_comprehensive_metadata(self, file_path: str) -> str:
+        """Get comprehensive metadata from a file using all ExifTool flags"""
+        try:
+            logger.debug(f"Getting comprehensive metadata for {file_path}")
+            with self.exiftool_pool.get_process() as process:
+                metadata_text = process.get_comprehensive_metadata(file_path)
+            return metadata_text
+        except Exception as e:
+            logger.error(f"Error getting comprehensive metadata for {file_path}: {str(e)}")
+            raise ExifToolError(f"Error getting comprehensive metadata: {str(e)}")
     def __del__(self):
         """Clean up resources"""
         if hasattr(self, 'exiftool_pool'):

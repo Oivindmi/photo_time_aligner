@@ -11,11 +11,38 @@ This document captures the key design decisions made during the development of P
 - **Impact**: No unnecessary caching, database, or complex abstractions
 
 ### User Experience Priority
-- **Decision**: Continuous drag-and-drop operation
-- **Rationale**: Users often process multiple photo sets in one session
-- **Impact**: UI remains ready for new photos after each operation
+- **Decision**: Continuous drag-and-drop operation with flexible workflows
+- **Rationale**: Users often need different approaches - sometimes comparing two photos, sometimes adjusting a single photo
+- **Impact**: UI supports both two-photo comparison and single-photo manual adjustment
+
+### Comprehensive Metadata Access
+- **Decision**: Provide full access to all available metadata
+- **Rationale**: Users need to investigate and understand their file metadata for informed decisions
+- **Impact**: Added metadata investigation feature with complete ExifTool output
 
 ## User Interface Decisions
+
+### Dual Workflow Support
+- **Decision**: Support both two-photo alignment and single-photo manual offset
+- **Options Considered**:
+  - Two-photo workflow only (original)
+  - Wizard-style sequential interface
+  - Tabbed interface for different modes
+  - Single interface with adaptive controls (chosen)
+- **Rationale**: Single interface adapts based on loaded photos, reducing complexity
+- **Impact**: Manual offset controls appear when target photo is missing
+
+### Manual Time Offset Design
+- **Decision**: Comprehensive time input (years, days, hours, minutes, seconds)
+- **Rationale**: Users need flexibility for various correction scenarios (timezone, date errors, precision adjustments)
+- **Implementation**: Single-line compact layout with validation
+- **Impact**: Handles everything from timezone corrections to date restoration
+
+### Metadata Investigation Integration
+- **Decision**: Integrated button with file selection rather than separate window
+- **Rationale**: Investigation is part of the workflow, not a separate tool
+- **Implementation**: Modal dialog with comprehensive search and copy features
+- **Impact**: Users can investigate metadata while maintaining main workflow context
 
 ### Drag & Drop Interface
 - **Decision**: Single window with two drop zones
@@ -27,12 +54,7 @@ This document captures the key design decisions made during the development of P
 - **Rationale**: Most intuitive for comparing two photos side-by-side
 - **Impact**: Clear visual metaphor for the alignment process
 
-### No Preview Window
-- **Decision**: Removed preview functionality
-- **Rationale**: Users trust the calculation; preview adds complexity
-- **Impact**: Simpler UI and codebase
-
-### Real-time Offset Calculation
+### Real-time Feedback
 - **Decision**: Calculate offset immediately when fields are selected
 - **Rationale**: Instant feedback improves user confidence
 - **Impact**: No need for separate "Calculate" button
@@ -51,7 +73,7 @@ This document captures the key design decisions made during the development of P
 ### Filename Pattern Matching
 - **Decision**: Smart pattern learning with manual toggle
 - **Rationale**: Screenshots and some cameras lack EXIF data
-- **Implementation**: Detects patterns like DSC_####, IMG_####, Screenshot_*
+- **Implementation**: Detects patterns like DSC_####, IMG_####, Screenshot_*, VID_####
 - **Impact**: Enables processing of files without camera metadata
 
 ### Empty Camera Metadata Handling
@@ -61,12 +83,19 @@ This document captures the key design decisions made during the development of P
 
 ## Time Synchronization Logic
 
+### Unified Processing Architecture
+- **Decision**: Single processing path for both calculated and manual offsets
+- **Rationale**: Consistent behavior regardless of offset source
+- **Implementation**: AlignmentProcessor accepts any timedelta offset
+- **Impact**: Manual and calculated offsets processed identically
+
 ### Field Synchronization Approach
 - **Decision**: Sync all fields within each file to selected field
 - **Rationale**: Maintains consistency within individual files
 - **Implementation**:
   - Reference files: All fields → selected field value
   - Target files: All fields → (selected field + offset)
+  - Manual mode: All fields → (selected field + manual offset)
 - **Impact**: Preserves relative timestamps between files
 
 ### Timezone Handling
@@ -78,6 +107,32 @@ This document captures the key design decisions made during the development of P
 - **Decision**: Never populate empty/missing fields
 - **Rationale**: Respect original file structure
 - **Impact**: Non-destructive updates only
+
+## Metadata Investigation Architecture
+
+### Comprehensive Data Access
+- **Decision**: Use ExifTool's most comprehensive flags (-a -u -g1)
+- **Rationale**: Users need access to all available metadata, not filtered subsets
+- **Implementation**: Separate comprehensive metadata extraction method
+- **Impact**: Shows everything ExifTool can extract, letting users filter as needed
+
+### Single-File Processing
+- **Decision**: Process only the selected file for investigation
+- **Rationale**: Investigation is focused on understanding one file at a time
+- **Implementation**: Argument file with single filename to avoid batch processing
+- **Impact**: Fast, focused metadata extraction without performance issues
+
+### Structured Presentation
+- **Decision**: Flat list with group headers and search functionality
+- **Rationale**: Balance between structure and searchability
+- **Implementation**: Parse ExifTool grouped output into searchable table
+- **Impact**: Easy to find specific fields while maintaining organization
+
+### Time Field Highlighting
+- **Decision**: Bold formatting for date/time related fields
+- **Rationale**: Time fields are primary user interest without hiding other data
+- **Implementation**: Keyword matching against field names
+- **Impact**: Quick identification of relevant fields while preserving complete data
 
 ## Performance and Scalability
 
@@ -114,12 +169,17 @@ This document captures the key design decisions made during the development of P
 1. **ExifTool Process Pool**: 3 concurrent processes handle operations in parallel
 2. **Async Directory Scanning**: Using `os.scandir` and asyncio for I/O operations
 3. **Batch Metadata Operations**: Process files in groups of 20
-4. **Removed Caching Layer**: Simplified architecture by removing the caching layer that caused recursion issues
+4. **Simplified Architecture**: Removed caching layer that caused recursion issues
 
 #### Performance Improvements
 - **Before**: 50 files in ~5 seconds (10 files/second)
 - **After**: 50 files in ~1 second (50 files/second)
 - **Large Folders**: 1000+ files processed without UI freezing
+
+### Metadata Investigation Performance
+- **Decision**: Use same process pool architecture for comprehensive metadata
+- **Implementation**: Single-file argument file approach maintains consistency
+- **Impact**: Fast metadata extraction without batch processing conflicts
 
 ### Architecture Simplification
 - **Decision**: Remove backward compatibility code
@@ -155,6 +215,11 @@ This document captures the key design decisions made during the development of P
 - **Rationale**: Simple, human-readable, portable
 - **Impact**: Easy backup and troubleshooting
 
+### Manual Offset Persistence
+- **Decision**: Don't persist manual offset values between sessions
+- **Rationale**: Manual offsets are typically one-time corrections
+- **Impact**: Clean slate for each session, preventing accidental reuse
+
 ### No Auto-Update
 - **Decision**: Manual updates only
 - **Rationale**: Simplicity and user control
@@ -171,6 +236,23 @@ This document captures the key design decisions made during the development of P
 - **Decision**: Treat photos and videos identically
 - **Implementation**: ExifTool handles both transparently
 - **Impact**: No special cases in code
+
+## UI/UX Improvements
+
+### Apply Button Logic
+- **Decision**: Enable apply button when reference photo is loaded (regardless of target or manual offset)
+- **Rationale**: Both workflows should be equally accessible
+- **Impact**: Users can process single photos as easily as photo pairs
+
+### Adaptive Controls
+- **Decision**: Manual offset controls automatically enable/disable based on loaded photos
+- **Rationale**: Clear visual indication of which mode is active
+- **Impact**: Prevents user confusion about which workflow is active
+
+### Comprehensive Help
+- **Decision**: Detailed documentation with use cases and examples
+- **Rationale**: Complex tool requires thorough explanation
+- **Impact**: Users can understand and effectively use all features
 
 ## Abandoned Approaches
 
@@ -190,4 +272,12 @@ This document captures the key design decisions made during the development of P
 - **Considered**: Process subfolders automatically
 - **Rejected**: User wants explicit control
 
-These design decisions resulted in a focused, reliable tool that solves a specific problem well without unnecessary complexity.
+### Wizard Interface
+- **Considered**: Step-by-step workflow wizard
+- **Rejected**: Single adaptive interface more efficient
+
+### Separate Investigation Tool
+- **Considered**: Standalone metadata investigation application
+- **Rejected**: Integration with main workflow more valuable
+
+These design decisions resulted in a focused, reliable tool that supports multiple workflows while solving specific problems without unnecessary complexity.

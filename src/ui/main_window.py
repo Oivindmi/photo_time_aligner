@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QLineEdit, QListWidget,
                              QRadioButton, QCheckBox, QFileDialog, QButtonGroup,
-                             QGroupBox, QMessageBox, QScrollArea)
+                             QGroupBox, QMessageBox, QScrollArea, QSpinBox)
 from PyQt5.QtCore import Qt, pyqtSignal, QMimeData
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QPixmap
 import os
@@ -13,7 +13,9 @@ from .file_scanner_thread import FileScannerThread
 from ..core.supported_formats import is_supported_format
 from datetime import datetime
 from .progress_dialog import ProgressDialog
+from .metadata_dialog import MetadataInvestigationDialog
 import logging
+
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,18 @@ class MainWindow(QMainWindow):
         # Thread references
         self.ref_scanner_thread = None
         self.target_scanner_thread = None
+
+        # Manual offset controls (will be set in init_ui)
+        self.manual_years = None
+        self.manual_days = None
+        self.manual_hours = None
+        self.manual_minutes = None
+        self.manual_seconds = None
+        self.manual_add_radio = None
+        self.manual_subtract_radio = None
+        self.manual_direction_group = None
+        self.manual_offset_container = None
+        self.manual_note_label = None
 
         self.init_ui()
         self.load_config()
@@ -216,10 +230,14 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(file_lists_section)
 
         # Time offset display
-        offset_layout = QHBoxLayout()
+        offset_layout = QVBoxLayout()
         self.offset_label = QLabel("Time Offset: Not calculated")
         self.offset_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
         offset_layout.addWidget(self.offset_label)
+
+        # Manual time offset section - NEW
+        self.create_manual_offset_section(offset_layout)
+
         main_layout.addLayout(offset_layout)
 
         # Master folder section
@@ -262,15 +280,93 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(folder_org_group)
 
-        # Apply button
+        # Apply and investigate buttons section - MODIFIED
+        button_layout = QHBoxLayout()
+
         self.apply_button = QPushButton("Apply Alignment")
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self.apply_alignment)
         self.apply_button.setStyleSheet("font-size: 16px; padding: 10px;")
-        main_layout.addWidget(self.apply_button)
+        button_layout.addWidget(self.apply_button)
+
+        # Investigate metadata button
+        self.investigate_button = QPushButton("Investigate Metadata")
+        self.investigate_button.clicked.connect(self.investigate_metadata)
+        self.investigate_button.setStyleSheet("font-size: 16px; padding: 10px;")
+        button_layout.addWidget(self.investigate_button)
+
+        # Radio buttons for file selection
+        button_layout.addWidget(QLabel("("))
+
+        self.investigate_ref_radio = QRadioButton("Reference")
+        self.investigate_ref_radio.setChecked(True)
+        button_layout.addWidget(self.investigate_ref_radio)
+
+        button_layout.addWidget(QLabel("•"))
+
+        self.investigate_target_radio = QRadioButton("Target")
+        button_layout.addWidget(self.investigate_target_radio)
+
+        button_layout.addWidget(QLabel(")"))
+
+        # Group the radio buttons
+        self.investigate_file_group = QButtonGroup()
+        self.investigate_file_group.addButton(self.investigate_ref_radio)
+        self.investigate_file_group.addButton(self.investigate_target_radio)
+
+        button_layout.addStretch()
+
+        main_layout.addLayout(button_layout)
 
         # Status bar
         self.statusBar().showMessage("Ready")
+
+    def investigate_metadata(self):
+        """Open metadata investigation dialog"""
+        try:
+            # Determine which file to investigate
+            if self.investigate_ref_radio.isChecked():
+                if not self.reference_file:
+                    QMessageBox.warning(self, "Warning", "No reference file loaded.")
+                    return
+                file_to_investigate = self.reference_file
+                logger.info(f"Investigating reference file: {file_to_investigate}")
+            else:
+                if not self.target_file:
+                    QMessageBox.warning(self, "Warning", "No target file loaded.")
+                    return
+                file_to_investigate = self.target_file
+                logger.info(f"Investigating target file: {file_to_investigate}")
+
+            # Open investigation dialog
+            dialog = MetadataInvestigationDialog(file_to_investigate, self.exif_handler, self)
+            dialog.exec_()
+
+        except Exception as e:
+            logger.error(f"Error in investigate_metadata: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error investigating metadata: {str(e)}")
+
+    def update_investigate_button_state(self):
+        """Update investigate button and radio button states"""
+        has_ref = self.reference_file is not None
+        has_target = self.target_file is not None
+
+        # Enable investigate button if at least one file is loaded
+        self.investigate_button.setEnabled(has_ref or has_target)
+
+        # Enable/disable radio buttons based on loaded files
+        self.investigate_ref_radio.setEnabled(has_ref)
+        self.investigate_target_radio.setEnabled(has_target)
+
+        # Auto-select available option if current selection is disabled
+        if self.investigate_ref_radio.isChecked() and not has_ref and has_target:
+            self.investigate_target_radio.setChecked(True)
+        elif self.investigate_target_radio.isChecked() and not has_target and has_ref:
+            self.investigate_ref_radio.setChecked(True)
+
+        # Default to reference if both available
+        if has_ref and not self.investigate_ref_radio.isChecked() and not self.investigate_target_radio.isChecked():
+            self.investigate_ref_radio.setChecked(True)
 
     def load_reference_photo(self, file_path: str):
         """Load reference photo and scan for matching files"""
@@ -292,6 +388,12 @@ class MainWindow(QMainWindow):
 
             # Calculate offset if both files are loaded
             self.calculate_time_offset()
+
+            # Update manual offset state - ADD THIS LINE
+            self.update_manual_offset_state()
+
+            # Update apply button state - ADD THIS LINE
+            self.update_apply_button_state()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading reference photo: {str(e)}")
@@ -316,6 +418,12 @@ class MainWindow(QMainWindow):
 
             # Calculate offset if both files are loaded
             self.calculate_time_offset()
+
+            # Update manual offset state - ADD THIS LINE
+            self.update_manual_offset_state()
+
+            # Update apply button state - ADD THIS LINE
+            self.update_apply_button_state()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading target photo: {str(e)}")
@@ -582,7 +690,7 @@ class MainWindow(QMainWindow):
                 display_text += f"Target photo is {direction} reference photo"
 
                 self.offset_label.setText(display_text)
-                self.apply_button.setEnabled(True)  # Always enable, even for zero offset
+                self.update_apply_button_state()
         except Exception as e:
             self.statusBar().showMessage(f"Error calculating offset: {str(e)}")
 
@@ -597,16 +705,20 @@ class MainWindow(QMainWindow):
         logger.info("=== Starting apply_alignment method ===")
 
         try:
-            # Validate inputs
-            # Remove this check:
-            # if not self.time_offset:
-            #     QMessageBox.warning(self, "Warning", "No time offset calculated.")
-            #     return
+            # Determine which offset to use
+            offset_to_use = None
 
-            # Instead, ensure time_offset is set (it could be zero)
-            if self.time_offset is None:
-                QMessageBox.warning(self, "Warning", "Please load both photos first.")
-                return
+            if self.target_file:
+                # Both photos loaded - use calculated offset
+                if self.time_offset is None:
+                    QMessageBox.warning(self, "Warning", "Please load both photos first.")
+                    return
+                offset_to_use = self.time_offset
+                logger.info(f"Using calculated offset: {self.time_offset}")
+            else:
+                # Only reference loaded - use manual offset
+                offset_to_use = self.get_manual_offset_timedelta()
+                logger.info(f"Using manual offset: {offset_to_use}")
 
             # Get selected time fields
             ref_field = None
@@ -617,16 +729,24 @@ class MainWindow(QMainWindow):
                     ref_field = radio.property("field_name")
                     break
 
-            for radio in self.target_time_radios.values():
-                if radio.isChecked():
-                    target_field = radio.property("field_name")
-                    break
+            # For single photo mode, use reference field for both
+            if not self.target_file:
+                target_field = ref_field
+            else:
+                for radio in self.target_time_radios.values():
+                    if radio.isChecked():
+                        target_field = radio.property("field_name")
+                        break
 
-            if not (ref_field and target_field):
-                QMessageBox.warning(self, "Warning", "Please select time fields for both groups.")
+            if not ref_field:
+                QMessageBox.warning(self, "Warning", "Please select a time field for the reference group.")
                 return
 
-            if not (self.reference_group_files or self.target_group_files):
+            # Determine which files to process
+            reference_files = self.reference_group_files if self.reference_group_files else []
+            target_files = self.target_group_files if self.target_group_files else []
+
+            if not reference_files and not target_files:
                 QMessageBox.warning(self, "Warning", "No files to process.")
                 return
 
@@ -652,11 +772,11 @@ class MainWindow(QMainWindow):
 
             # Process files
             status = processor.process_files(
-                reference_files=self.reference_group_files,
-                target_files=self.target_group_files,
+                reference_files=reference_files,
+                target_files=target_files,
                 reference_field=ref_field,
                 target_field=target_field,
-                time_offset=self.time_offset,
+                time_offset=offset_to_use,
                 master_folder=master_folder,
                 move_files=self.move_files_check.isChecked(),
                 use_camera_folders=use_camera_folders
@@ -672,7 +792,7 @@ class MainWindow(QMainWindow):
             report_generator = AlignmentReport(self.config_manager)
             report_text = report_generator.generate_console_report(
                 status=status,
-                time_offset=self.time_offset,
+                time_offset=offset_to_use,
                 start_time=start_time,
                 end_time=end_time,
                 master_folder_org="Camera-specific subfolders" if use_camera_folders else "Root folder"
@@ -836,3 +956,146 @@ class MainWindow(QMainWindow):
         else:
             logger.warning(f"Cannot reload target file, not found: {target_path}")
             self.target_info.setText("No media loaded (file moved/deleted)")
+
+    def create_manual_offset_section(self, parent_layout):
+        """Create the manual time offset input section"""
+        # Container for manual offset
+        manual_container = QWidget()
+        manual_layout = QHBoxLayout(manual_container)
+        manual_layout.setContentsMargins(10, 5, 10, 5)
+
+        # Label
+        manual_layout.addWidget(QLabel("Manual Time Offset:"))
+
+        # Years input
+        manual_layout.addWidget(QLabel("Years:"))
+        self.manual_years = QSpinBox()
+        self.manual_years.setRange(0, 100)
+        self.manual_years.setMaximumWidth(60)
+        self.manual_years.valueChanged.connect(self.update_apply_button_state)
+        manual_layout.addWidget(self.manual_years)
+
+        # Days input
+        manual_layout.addWidget(QLabel("Days:"))
+        self.manual_days = QSpinBox()
+        self.manual_days.setRange(0, 365)
+        self.manual_days.setMaximumWidth(60)
+        self.manual_days.valueChanged.connect(self.update_apply_button_state)
+        manual_layout.addWidget(self.manual_days)
+
+        # Hours input
+        manual_layout.addWidget(QLabel("Hours:"))
+        self.manual_hours = QSpinBox()
+        self.manual_hours.setRange(0, 23)
+        self.manual_hours.setMaximumWidth(50)
+        self.manual_hours.valueChanged.connect(self.update_apply_button_state)
+        manual_layout.addWidget(self.manual_hours)
+
+        # Minutes input
+        manual_layout.addWidget(QLabel("Minutes:"))
+        self.manual_minutes = QSpinBox()
+        self.manual_minutes.setRange(0, 59)
+        self.manual_minutes.setMaximumWidth(50)
+        self.manual_minutes.valueChanged.connect(self.update_apply_button_state)
+        manual_layout.addWidget(self.manual_minutes)
+
+        # Seconds input
+        manual_layout.addWidget(QLabel("Seconds:"))
+        self.manual_seconds = QSpinBox()
+        self.manual_seconds.setRange(0, 59)
+        self.manual_seconds.setMaximumWidth(50)
+        self.manual_seconds.valueChanged.connect(self.update_apply_button_state)
+        manual_layout.addWidget(self.manual_seconds)
+
+        # Direction radio buttons
+        manual_layout.addWidget(QLabel("("))
+        self.manual_add_radio = QRadioButton("Add")
+        self.manual_add_radio.setChecked(True)
+        manual_layout.addWidget(self.manual_add_radio)
+
+        manual_layout.addWidget(QLabel("•"))
+
+        self.manual_subtract_radio = QRadioButton("Subtract")
+        manual_layout.addWidget(self.manual_subtract_radio)
+
+        manual_layout.addWidget(QLabel(") time"))
+
+        # Group the radio buttons
+        self.manual_direction_group = QButtonGroup()
+        self.manual_direction_group.addButton(self.manual_add_radio)
+        self.manual_direction_group.addButton(self.manual_subtract_radio)
+
+        manual_layout.addStretch()
+
+        # Note label
+        self.manual_note_label = QLabel("Note: Used when target photo is missing")
+        self.manual_note_label.setStyleSheet("color: #666; font-style: italic; font-size: 11px;")
+        manual_layout.addWidget(self.manual_note_label)
+
+        parent_layout.addWidget(manual_container)
+
+        # Store reference to manual container for enabling/disabling
+        self.manual_offset_container = manual_container
+
+    def get_manual_offset_timedelta(self):
+        """Get the manual offset as a timedelta object"""
+        from datetime import timedelta
+
+        years = self.manual_years.value()
+        days = self.manual_days.value()
+        hours = self.manual_hours.value()
+        minutes = self.manual_minutes.value()
+        seconds = self.manual_seconds.value()
+
+        # Convert years to days (approximate)
+        total_days = days + (years * 365)
+
+        offset = timedelta(
+            days=total_days,
+            hours=hours,
+            minutes=minutes,
+            seconds=seconds
+        )
+
+        # Apply direction
+        if self.manual_subtract_radio.isChecked():
+            offset = -offset
+
+        return offset
+
+    def is_manual_offset_set(self):
+        """Check if any manual offset values are set"""
+        return (self.manual_years.value() > 0 or
+                self.manual_days.value() > 0 or
+                self.manual_hours.value() > 0 or
+                self.manual_minutes.value() > 0 or
+                self.manual_seconds.value() > 0)
+
+    def update_manual_offset_state(self):
+        """Update the state of manual offset controls based on loaded photos"""
+        has_target = self.target_file is not None
+
+        # Disable manual controls when target is loaded
+        self.manual_offset_container.setEnabled(not has_target)
+
+        # Update note text
+        if has_target:
+            self.manual_note_label.setText("Note: Disabled (using calculated offset)")
+            self.manual_note_label.setStyleSheet("color: #999; font-style: italic; font-size: 11px;")
+        else:
+            self.manual_note_label.setText("Note: Used when target photo is missing")
+            self.manual_note_label.setStyleSheet("color: #666; font-style: italic; font-size: 11px;")
+
+    def update_apply_button_state(self):
+        """Update apply button state based on current conditions"""
+        can_apply = False
+
+        if self.reference_file:
+            if self.target_file:
+                # Both photos loaded - use calculated offset
+                can_apply = self.time_offset is not None
+            else:
+                # Only reference loaded - can apply with or without manual offset
+                can_apply = True
+
+        self.apply_button.setEnabled(can_apply)

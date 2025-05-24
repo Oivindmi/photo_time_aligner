@@ -242,6 +242,41 @@ class ExifToolProcess:
                 self.running = False
                 self.process = None
 
+    def get_comprehensive_metadata(self, file_path: str) -> str:
+        """Get comprehensive metadata using -a -u -g1 flags for a single file"""
+        # Create temporary argument file with single file - exactly like batch operations
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as arg_file:
+            arg_file.write(file_path + '\n')
+            arg_file_path = arg_file.name
+
+        try:
+            # Use the same command structure as batch operations, but with comprehensive flags
+            cmd = [
+                '-a',  # Allow duplicate tags
+                '-u',  # Unknown tags
+                '-g1',  # Group by category level 1
+                '-charset', 'filename=utf8',
+                '-@', arg_file_path  # Single-file argument file (same as batch approach)
+            ]
+
+            logger.debug(f"ExifTool comprehensive command: {' '.join(cmd)}")
+
+            # Execute using persistent process (same as batch operations)
+            output = self.execute_command(cmd)
+
+            if not output.strip():
+                logger.warning("ExifTool returned empty comprehensive metadata")
+                return "No metadata found"
+
+            return output.strip()
+
+        except Exception as e:
+            logger.error(f"Error getting comprehensive metadata: {str(e)}")
+            return f"Error reading metadata: {str(e)}"
+        finally:
+            # Clean up the argument file (same as batch operations)
+            if os.path.exists(arg_file_path):
+                os.remove(arg_file_path)
     def __del__(self):
         """Ensure the process is terminated when the object is deleted"""
         self.stop()
