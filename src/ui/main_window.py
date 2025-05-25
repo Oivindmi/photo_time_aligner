@@ -5,19 +5,16 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, pyqtSignal, QMimeData
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QPixmap
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 from ..core import ExifHandler, ConfigManager, FileProcessor, TimeCalculator
 from ..utils import FileProcessingError
 from .file_scanner_thread import FileScannerThread
 from ..core.supported_formats import is_supported_format
-from datetime import datetime
 from .progress_dialog import ProgressDialog
 from .metadata_dialog import MetadataInvestigationDialog
 import logging
 from PyQt5.QtWidgets import QApplication, QMessageBox
-from datetime import datetime
-
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +79,9 @@ class MainWindow(QMainWindow):
         self.target_group_files = []
         self.time_offset = None
 
+        # Single file mode state
+        self.single_file_mode = False
+
         # Thread references
         self.ref_scanner_thread = None
         self.target_scanner_thread = None
@@ -98,6 +98,13 @@ class MainWindow(QMainWindow):
         self.manual_offset_container = None
         self.manual_note_label = None
 
+        # UI element references for mode control
+        self.target_section_widgets = []
+        self.ref_group_box = None
+        self.target_group_box = None
+        self.ref_files_group = None
+        self.target_files_group = None
+
         self.init_ui()
         self.load_config()
 
@@ -109,6 +116,15 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
+
+        # Add Single File Mode toggle at the top
+        single_mode_layout = QHBoxLayout()
+        self.single_file_mode_check = QCheckBox("Single File Mode (Investigation Only)")
+        self.single_file_mode_check.setToolTip("Enable to investigate single files without processing groups")
+        self.single_file_mode_check.stateChanged.connect(self.toggle_single_file_mode)
+        single_mode_layout.addWidget(self.single_file_mode_check)
+        single_mode_layout.addStretch()
+        main_layout.addLayout(single_mode_layout)
 
         # Create top section with drop zones
         drop_section = QHBoxLayout()
@@ -122,14 +138,18 @@ class MainWindow(QMainWindow):
         self.reference_info = QLabel("No media loaded")
         reference_section.addWidget(self.reference_info)
 
-        # Target photo section
+        # Target photo section - store widgets for disabling
         target_section = QVBoxLayout()
-        target_section.addWidget(QLabel("Media to Align"))
+        target_label = QLabel("Media to Align")
+        target_section.addWidget(target_label)
         self.target_drop = PhotoDropZone("Drop Photo/Video to Align", parent=self)
         self.target_drop.file_dropped.connect(self.load_target_photo)
         target_section.addWidget(self.target_drop)
         self.target_info = QLabel("No media loaded")
         target_section.addWidget(self.target_info)
+
+        # Store target section widgets for disabling
+        self.target_section_widgets = [target_label, self.target_drop, self.target_info]
 
         drop_section.addLayout(reference_section)
         drop_section.addLayout(target_section)
@@ -138,8 +158,8 @@ class MainWindow(QMainWindow):
         # Create middle section with group rules and time fields
         middle_section = QHBoxLayout()
 
-        # Reference group settings
-        ref_group = QGroupBox("Reference Group Settings")
+        # Reference group settings - store reference for disabling
+        self.ref_group_box = QGroupBox("Reference Group Settings")
         ref_layout = QVBoxLayout()
 
         self.ref_camera_check = QCheckBox("Match Camera Model")
@@ -170,10 +190,10 @@ class MainWindow(QMainWindow):
         self.ref_time_container = QVBoxLayout()
         ref_layout.addLayout(self.ref_time_container)
 
-        ref_group.setLayout(ref_layout)
+        self.ref_group_box.setLayout(ref_layout)
 
-        # Target group settings
-        target_group = QGroupBox("Target Group Settings")
+        # Target group settings - store reference for disabling
+        self.target_group_box = QGroupBox("Target Group Settings")
         target_layout = QVBoxLayout()
 
         self.target_camera_check = QCheckBox("Match Camera Model")
@@ -204,31 +224,31 @@ class MainWindow(QMainWindow):
         self.target_time_container = QVBoxLayout()
         target_layout.addLayout(self.target_time_container)
 
-        target_group.setLayout(target_layout)
+        self.target_group_box.setLayout(target_layout)
 
-        middle_section.addWidget(ref_group)
-        middle_section.addWidget(target_group)
+        middle_section.addWidget(self.ref_group_box)
+        middle_section.addWidget(self.target_group_box)
         main_layout.addLayout(middle_section)
 
-        # File lists section
+        # File lists section - store references for disabling
         file_lists_section = QHBoxLayout()
 
         # Reference files list
-        ref_files_group = QGroupBox("Reference Files")
+        self.ref_files_group = QGroupBox("Reference Files")
         ref_files_layout = QVBoxLayout()
         self.ref_files_list = QListWidget()
         ref_files_layout.addWidget(self.ref_files_list)
-        ref_files_group.setLayout(ref_files_layout)
+        self.ref_files_group.setLayout(ref_files_layout)
 
         # Target files list
-        target_files_group = QGroupBox("Target Files")
+        self.target_files_group = QGroupBox("Target Files")
         target_files_layout = QVBoxLayout()
         self.target_files_list = QListWidget()
         target_files_layout.addWidget(self.target_files_list)
-        target_files_group.setLayout(target_files_layout)
+        self.target_files_group.setLayout(target_files_layout)
 
-        file_lists_section.addWidget(ref_files_group)
-        file_lists_section.addWidget(target_files_group)
+        file_lists_section.addWidget(self.ref_files_group)
+        file_lists_section.addWidget(self.target_files_group)
         main_layout.addLayout(file_lists_section)
 
         # Time offset display
@@ -237,12 +257,12 @@ class MainWindow(QMainWindow):
         self.offset_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
         offset_layout.addWidget(self.offset_label)
 
-        # Manual time offset section - NEW
+        # Manual time offset section
         self.create_manual_offset_section(offset_layout)
 
         main_layout.addLayout(offset_layout)
 
-        # Master folder section
+        # Master folder section - store references for disabling
         master_folder_layout = QHBoxLayout()
         master_folder_layout.addWidget(QLabel("Master Folder:"))
         self.master_folder_input = QLineEdit()
@@ -257,32 +277,32 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(master_folder_layout)
         main_layout.addWidget(self.move_files_check)
 
-        # Add folder organization options
-        folder_org_group = QGroupBox("Master Folder Organization")
+        # Add folder organization options - store reference for disabling
+        self.folder_org_group = QGroupBox("Master Folder Organization")
         folder_org_layout = QVBoxLayout()
 
-        self.folder_org_group = QButtonGroup()
+        self.folder_org_group_buttons = QButtonGroup()
         self.org_root_radio = QRadioButton("Move to root folder")
         self.org_root_radio.setChecked(True)
         self.org_camera_radio = QRadioButton("Create camera-specific subfolders")
 
-        self.folder_org_group.addButton(self.org_root_radio)
-        self.folder_org_group.addButton(self.org_camera_radio)
+        self.folder_org_group_buttons.addButton(self.org_root_radio)
+        self.folder_org_group_buttons.addButton(self.org_camera_radio)
 
         folder_org_layout.addWidget(self.org_root_radio)
         folder_org_layout.addWidget(self.org_camera_radio)
 
-        folder_org_group.setLayout(folder_org_layout)
+        self.folder_org_group.setLayout(folder_org_layout)
 
         # Only show organization options when move files is checked
-        folder_org_group.setEnabled(self.move_files_check.isChecked())
+        self.folder_org_group.setEnabled(self.move_files_check.isChecked())
         self.move_files_check.stateChanged.connect(
-            lambda state: folder_org_group.setEnabled(state == Qt.Checked)
+            lambda state: self.folder_org_group.setEnabled(state == Qt.Checked)
         )
 
-        main_layout.addWidget(folder_org_group)
+        main_layout.addWidget(self.folder_org_group)
 
-        # Apply and investigate buttons section - MODIFIED
+        # Apply and investigate buttons section
         button_layout = QHBoxLayout()
 
         self.apply_button = QPushButton("Apply Alignment")
@@ -323,6 +343,130 @@ class MainWindow(QMainWindow):
         # Status bar
         self.statusBar().showMessage("Ready")
 
+    def toggle_single_file_mode(self, state):
+        """Toggle between single file mode and normal mode"""
+        self.single_file_mode = (state == Qt.Checked)
+
+        # Update UI state
+        self.update_ui_for_single_file_mode()
+
+        # Clear current processing if switching modes
+        if self.single_file_mode:
+            # Stop any running file scans
+            self.stop_file_scanning()
+            # Clear file lists
+            self.clear_file_lists()
+            # Shutdown ExifTool pool and create single process for single file operations
+            logger.info("Single file mode: Shutting down ExifTool pool, creating single process")
+            self.exif_handler.exiftool_pool.shutdown()
+            # Create single ExifTool process for single file operations
+            from ..core.exiftool_process import ExifToolProcess
+            self.exif_handler._single_process = ExifToolProcess()
+            self.exif_handler._single_process.start()
+            # Update status
+            self.statusBar().showMessage("Single File Mode - Investigation Only (Using single ExifTool process)")
+        else:
+            # Re-enable normal processing
+            # Clean up single process if it exists
+            if hasattr(self.exif_handler, '_single_process'):
+                logger.info("Normal mode: Stopping single process, restarting ExifTool pool")
+                self.exif_handler._single_process.stop()
+                delattr(self.exif_handler, '_single_process')
+
+            # Restart ExifTool pool for batch operations
+            from ..core.exiftool_pool import ExifToolProcessPool
+            self.exif_handler.exiftool_pool = ExifToolProcessPool(pool_size=4)
+            self.statusBar().showMessage("Normal Mode - Full Processing (ExifTool pool active)")
+            # If we have files loaded, restart normal scanning
+            if self.reference_file:
+                self.update_reference_files()
+            if self.target_file:
+                self.update_target_files()
+
+    def update_ui_for_single_file_mode(self):
+        """Update UI elements based on single file mode state"""
+        # Inverse logic: disable when in single file mode
+        normal_mode = not self.single_file_mode
+
+        # Disable target section completely in single file mode
+        for widget in self.target_section_widgets:
+            widget.setEnabled(normal_mode)
+
+        # Disable group settings but keep time fields enabled in single mode
+        if self.single_file_mode:
+            # In single file mode: disable matching controls but keep time fields enabled
+            self.ref_camera_check.setEnabled(False)
+            self.ref_extension_check.setEnabled(False)
+            self.ref_pattern_check.setEnabled(False)
+            self.ref_pattern_label.setEnabled(False)
+            self.ref_file_count.setEnabled(False)
+            # Keep time fields enabled by not disabling the whole group box
+        else:
+            # In normal mode: enable everything
+            self.ref_camera_check.setEnabled(True)
+            self.ref_extension_check.setEnabled(True)
+            self.ref_pattern_check.setEnabled(True)
+            self.ref_pattern_label.setEnabled(True)
+            self.ref_file_count.setEnabled(True)
+
+        self.target_group_box.setEnabled(normal_mode)
+
+        # Disable file lists
+        self.ref_files_group.setEnabled(normal_mode)
+        self.target_files_group.setEnabled(normal_mode)
+
+        # Disable processing controls
+        self.apply_button.setEnabled(normal_mode and self.can_apply_alignment())
+
+        # Disable master folder controls
+        self.master_folder_input.setEnabled(normal_mode)
+        self.browse_button.setEnabled(normal_mode)
+        self.move_files_check.setEnabled(normal_mode)
+        self.folder_org_group.setEnabled(normal_mode and self.move_files_check.isChecked())
+
+        # Disable manual offset controls
+        if hasattr(self, 'manual_offset_container'):
+            self.manual_offset_container.setEnabled(normal_mode)
+
+        # Keep investigation button enabled - it's useful in both modes
+        self.investigate_button.setEnabled(True)
+
+        # Update investigate radio buttons
+        self.update_investigate_button_state()
+
+    def stop_file_scanning(self):
+        """Stop any running file scanning threads"""
+        if self.ref_scanner_thread and self.ref_scanner_thread.isRunning():
+            self.ref_scanner_thread.stop()
+            self.ref_scanner_thread.wait()
+
+        if self.target_scanner_thread and self.target_scanner_thread.isRunning():
+            self.target_scanner_thread.stop()
+            self.target_scanner_thread.wait()
+
+    def clear_file_lists(self):
+        """Clear file lists and reset counters"""
+        self.ref_files_list.clear()
+        self.target_files_list.clear()
+        self.reference_group_files = []
+        self.target_group_files = []
+        self.ref_file_count.setText("Matching files: 0")
+        self.target_file_count.setText("Matching files: 0")
+
+    def can_apply_alignment(self):
+        """Check if alignment can be applied"""
+        if self.single_file_mode:
+            return False
+
+        if self.reference_file:
+            if self.target_file:
+                # Both photos loaded - use calculated offset
+                return self.time_offset is not None
+            else:
+                # Only reference loaded - can apply with or without manual offset
+                return True
+        return False
+
     def investigate_metadata(self):
         """Open metadata investigation dialog"""
         try:
@@ -356,14 +500,14 @@ class MainWindow(QMainWindow):
         # Enable investigate button if at least one file is loaded
         self.investigate_button.setEnabled(has_ref or has_target)
 
-        # Enable/disable radio buttons based on loaded files
+        # Enable/disable radio buttons based on loaded files and mode
         self.investigate_ref_radio.setEnabled(has_ref)
-        self.investigate_target_radio.setEnabled(has_target)
+        self.investigate_target_radio.setEnabled(has_target and not self.single_file_mode)
 
         # Auto-select available option if current selection is disabled
         if self.investigate_ref_radio.isChecked() and not has_ref and has_target:
             self.investigate_target_radio.setChecked(True)
-        elif self.investigate_target_radio.isChecked() and not has_target and has_ref:
+        elif self.investigate_target_radio.isChecked() and (not has_target or self.single_file_mode) and has_ref:
             self.investigate_ref_radio.setChecked(True)
 
         # Default to reference if both available
@@ -371,7 +515,7 @@ class MainWindow(QMainWindow):
             self.investigate_ref_radio.setChecked(True)
 
     def load_reference_photo(self, file_path: str):
-        """Load reference photo and scan for matching files"""
+        """Load reference photo and scan for matching files (unless in single file mode)"""
         try:
             self.reference_file = file_path
             self.reference_metadata = self.exif_handler.read_metadata(file_path)
@@ -385,23 +529,24 @@ class MainWindow(QMainWindow):
             # Load time fields
             self.load_time_fields_for_reference()
 
-            # Find matching files
-            self.update_reference_files()
+            # Only find matching files if NOT in single file mode
+            if not self.single_file_mode:
+                self.update_reference_files()
+                # Calculate offset if both files are loaded
+                self.calculate_time_offset()
+                # Update manual offset state
+                self.update_manual_offset_state()
+                # Update apply button state
+                self.update_apply_button_state()
 
-            # Calculate offset if both files are loaded
-            self.calculate_time_offset()
-
-            # Update manual offset state - ADD THIS LINE
-            self.update_manual_offset_state()
-
-            # Update apply button state - ADD THIS LINE
-            self.update_apply_button_state()
+            # Update investigate button state
+            self.update_investigate_button_state()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading reference photo: {str(e)}")
 
     def load_target_photo(self, file_path: str):
-        """Load target photo and scan for matching files"""
+        """Load target photo and scan for matching files (unless in single file mode)"""
         try:
             self.target_file = file_path
             self.target_metadata = self.exif_handler.read_metadata(file_path)
@@ -415,17 +560,18 @@ class MainWindow(QMainWindow):
             # Load time fields
             self.load_time_fields_for_target()
 
-            # Find matching files
-            self.update_target_files()
+            # Only find matching files if NOT in single file mode
+            if not self.single_file_mode:
+                self.update_target_files()
+                # Calculate offset if both files are loaded
+                self.calculate_time_offset()
+                # Update manual offset state
+                self.update_manual_offset_state()
+                # Update apply button state
+                self.update_apply_button_state()
 
-            # Calculate offset if both files are loaded
-            self.calculate_time_offset()
-
-            # Update manual offset state - ADD THIS LINE
-            self.update_manual_offset_state()
-
-            # Update apply button state - ADD THIS LINE
-            self.update_apply_button_state()
+            # Update investigate button state
+            self.update_investigate_button_state()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading target photo: {str(e)}")
@@ -541,8 +687,8 @@ class MainWindow(QMainWindow):
                     first = False
 
     def update_reference_files(self):
-        """Update list of files matching reference photo criteria"""
-        if not self.reference_file:
+        """Update list of files matching reference photo criteria (skip in single file mode)"""
+        if not self.reference_file or self.single_file_mode:
             return
 
         # Cancel previous scan if running
@@ -582,8 +728,8 @@ class MainWindow(QMainWindow):
         self.ref_scanner_thread.start()
 
     def update_target_files(self):
-        """Update list of files matching target photo criteria"""
-        if not self.target_file:
+        """Update list of files matching target photo criteria (skip in single file mode)"""
+        if not self.target_file or self.single_file_mode:
             return
 
         # Cancel previous scan if running
@@ -860,6 +1006,7 @@ class MainWindow(QMainWindow):
             # Cleanup progress callback
             if hasattr(self.file_processor, 'progress_callback'):
                 self.file_processor.progress_callback = None
+
     def show_results_dialog(self, status, report_text):
         """Show results dialog with summary"""
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
@@ -884,43 +1031,6 @@ class MainWindow(QMainWindow):
 
         dialog.setLayout(layout)
         dialog.exec_()
-
-    def load_config(self):
-        """Load saved configuration"""
-        geometry = self.config_manager.get('window_geometry', {})
-        if geometry:
-            self.setGeometry(geometry.get('x', 100), geometry.get('y', 100),
-                             geometry.get('width', 900), geometry.get('height', 700))
-
-        last_master = self.config_manager.get('last_master_folder', '')
-        self.master_folder_input.setText(last_master)
-
-        move_files = self.config_manager.get('move_to_master', True)
-        self.move_files_check.setChecked(move_files)
-
-
-    def closeEvent(self, event):
-        """Save configuration on close"""
-        # Terminate any running threads
-        if self.ref_scanner_thread and self.ref_scanner_thread.isRunning():
-            self.ref_scanner_thread.stop()
-            self.ref_scanner_thread.wait()
-
-        if self.target_scanner_thread and self.target_scanner_thread.isRunning():
-            self.target_scanner_thread.stop()
-            self.target_scanner_thread.wait()
-
-        # Save configuration
-        self.config_manager.set('window_geometry', {
-            'x': self.geometry().x(),
-            'y': self.geometry().y(),
-            'width': self.geometry().width(),
-            'height': self.geometry().height()
-        })
-        self.config_manager.set('last_master_folder', self.master_folder_input.text())
-        self.config_manager.set('move_to_master', self.move_files_check.isChecked())
-        self.config_manager.save()
-        event.accept()
 
     def reload_files_after_alignment(self, status, master_folder, use_camera_folders):
         """Reload files after alignment to show updated metadata"""
@@ -1081,8 +1191,6 @@ class MainWindow(QMainWindow):
 
     def get_manual_offset_timedelta(self):
         """Get the manual offset as a timedelta object"""
-        from datetime import timedelta
-
         years = self.manual_years.value()
         days = self.manual_days.value()
         hours = self.manual_hours.value()
@@ -1118,7 +1226,8 @@ class MainWindow(QMainWindow):
         has_target = self.target_file is not None
 
         # Disable manual controls when target is loaded
-        self.manual_offset_container.setEnabled(not has_target)
+        if hasattr(self, 'manual_offset_container'):
+            self.manual_offset_container.setEnabled(not has_target)
 
         # Update note text
         if has_target:
@@ -1132,7 +1241,7 @@ class MainWindow(QMainWindow):
         """Update apply button state based on current conditions"""
         can_apply = False
 
-        if self.reference_file:
+        if not self.single_file_mode and self.reference_file:
             if self.target_file:
                 # Both photos loaded - use calculated offset
                 can_apply = self.time_offset is not None
@@ -1141,3 +1250,44 @@ class MainWindow(QMainWindow):
                 can_apply = True
 
         self.apply_button.setEnabled(can_apply)
+
+    def load_config(self):
+        """Load saved configuration"""
+        geometry = self.config_manager.get('window_geometry', {})
+        if geometry:
+            self.setGeometry(geometry.get('x', 100), geometry.get('y', 100),
+                             geometry.get('width', 900), geometry.get('height', 700))
+
+        last_master = self.config_manager.get('last_master_folder', '')
+        self.master_folder_input.setText(last_master)
+
+        move_files = self.config_manager.get('move_to_master', True)
+        self.move_files_check.setChecked(move_files)
+
+        # Load single file mode preference
+        single_mode = self.config_manager.get('single_file_mode', False)
+        self.single_file_mode_check.setChecked(single_mode)
+
+    def closeEvent(self, event):
+        """Save configuration on close"""
+        # Terminate any running threads
+        if self.ref_scanner_thread and self.ref_scanner_thread.isRunning():
+            self.ref_scanner_thread.stop()
+            self.ref_scanner_thread.wait()
+
+        if self.target_scanner_thread and self.target_scanner_thread.isRunning():
+            self.target_scanner_thread.stop()
+            self.target_scanner_thread.wait()
+
+        # Save configuration
+        self.config_manager.set('window_geometry', {
+            'x': self.geometry().x(),
+            'y': self.geometry().y(),
+            'width': self.geometry().width(),
+            'height': self.geometry().height()
+        })
+        self.config_manager.set('last_master_folder', self.master_folder_input.text())
+        self.config_manager.set('move_to_master', self.move_files_check.isChecked())
+        self.config_manager.set('single_file_mode', self.single_file_mode_check.isChecked())
+        self.config_manager.save()
+        event.accept()

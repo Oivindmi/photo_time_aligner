@@ -1,15 +1,33 @@
 # Photo & Video Time Aligner
 
-A Windows application for synchronizing timestamps across photos and videos from different cameras, with manual time adjustment capabilities and comprehensive metadata investigation tools.
+A Windows application for synchronizing timestamps across photos and videos from different cameras, with manual time adjustment capabilities, comprehensive metadata investigation tools, and single file investigation mode.
 
 ## Features
+- **Dual Operation Modes**: Full processing mode and single file investigation mode
 - Drag and drop interface for photo and video comparison
 - Automatic detection of media from the same camera/device
 - Batch time adjustment for all matching media files
 - **Manual time offset** - adjust photos without needing a target photo
+- **Single File Mode** - investigate individual files without processing groups
 - **Comprehensive metadata investigation** - explore all EXIF data in your files
 - Support for 50+ photo and video formats
 - Optional master folder organization with camera-specific subfolders
+
+## Operation Modes
+
+### Full Processing Mode (Default)
+- Two-photo alignment workflow for synchronizing different cameras
+- Single-photo manual adjustment workflow for timezone corrections
+- Batch processing of matching files
+- Master folder organization
+- Uses 4 parallel ExifTool processes for optimal performance
+
+### Single File Mode (Investigation Only)
+- **Purpose**: Quick investigation of individual file metadata without processing
+- **Resource Efficient**: Uses single ExifTool process instead of 4
+- **UI Simplified**: Processing controls disabled, focus on investigation
+- **Perfect For**: Examining time fields, camera settings, and metadata before processing
+- **Toggle**: Checkbox at top of interface for easy switching
 
 ## Supported Media Formats
 
@@ -51,30 +69,46 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Two-Photo Workflow (Standard)
-1. Launch the application
-2. Drag and drop a reference photo from one camera
-3. Drag and drop a photo to align from another camera
-4. Select which time fields to use for synchronization
-5. Configure group selection rules (camera model, file extension, filename pattern)
-6. Review the calculated time offset
-7. Optionally set a master folder for organized output
-8. Click "Apply Alignment" to synchronize all matching photos
+### Single File Mode (New - Investigation Only)
+1. **Enable Single File Mode**: Check "Single File Mode (Investigation Only)" at the top
+2. **Drop File**: Drag and drop any photo/video into the reference zone
+3. **Examine Time Fields**: View all available time/date fields with raw and parsed values
+4. **Investigate Metadata**: Click "Investigate Metadata" for comprehensive metadata exploration
+5. **Resource Efficient**: Uses only one ExifTool process for optimal performance
+6. **Quick Toggle**: Uncheck to return to full processing mode
 
-### Single-Photo Workflow (Manual Offset) - **NEW**
-1. Launch the application
-2. Drag and drop a reference photo (no target photo needed)
-3. Configure group selection rules for matching files
-4. Select the time field to use for synchronization
-5. Set manual time offset using the input fields:
+**Perfect for:**
+- Quick metadata examination before processing
+- Understanding available time fields
+- Investigating camera settings and technical data
+- Educational exploration of file metadata
+
+### Two-Photo Workflow (Standard Full Processing)
+1. **Disable Single File Mode** (if enabled)
+2. Launch the application
+3. Drag and drop a reference photo from one camera
+4. Drag and drop a photo to align from another camera
+5. Select which time fields to use for synchronization
+6. Configure group selection rules (camera model, file extension, filename pattern)
+7. Review the calculated time offset
+8. Optionally set a master folder for organized output
+9. Click "Apply Alignment" to synchronize all matching photos
+
+### Single-Photo Workflow (Manual Offset Full Processing)
+1. **Disable Single File Mode** (if enabled)
+2. Launch the application
+3. Drag and drop a reference photo (no target photo needed)
+4. Configure group selection rules for matching files
+5. Select the time field to use for synchronization
+6. Set manual time offset using the input fields:
    - Years (0-100), Days (0-365), Hours (0-23), Minutes (0-59), Seconds (0-59)
    - Choose "Add" or "Subtract" time
-6. Optionally set a master folder for organized output
-7. Click "Apply Alignment" to apply the manual offset to all matching photos
+7. Optionally set a master folder for organized output
+8. Click "Apply Alignment" to apply the manual offset to all matching photos
 
-### Metadata Investigation - **NEW**
+### Metadata Investigation (Available in Both Modes)
 - Click "Investigate Metadata" next to Apply Alignment
-- Choose Reference or Target file using radio buttons
+- Choose Reference or Target file using radio buttons (Target disabled in Single File Mode)
 - Explore comprehensive metadata in a searchable table
 - Time/date fields are highlighted in bold
 - Right-click to copy field names, values, or both
@@ -102,6 +136,12 @@ Choose between two organization methods:
 
 ## Use Cases
 
+### Quick Investigation (New)
+- **Single File Mode**: Check individual photos before processing
+- **Metadata Exploration**: Understand available time fields and camera settings
+- **Educational**: Learn about different metadata standards and formats
+- **Troubleshooting**: Investigate files with missing or corrupted timestamps
+
 ### Wedding Photography
 - Multiple photographers with different cameras
 - Align all cameras to primary photographer's time
@@ -117,13 +157,34 @@ Choose between two organization methods:
 - Compare EXIF data between different photos
 - Identify missing or corrupted metadata fields
 
+## Mode Comparison
+
+| Feature | Single File Mode | Full Processing Mode |
+|---------|------------------|---------------------|
+| **Purpose** | Investigation Only | Full Processing |
+| **ExifTool Processes** | 1 (Resource Efficient) | 4 (High Performance) |
+| **File Processing** | None | Batch Operations |
+| **Time Field Display** | ✅ Available | ✅ Available |
+| **Metadata Investigation** | ✅ Available | ✅ Available |
+| **Group Matching** | ❌ Disabled | ✅ Available |
+| **Apply Alignment** | ❌ Disabled | ✅ Available |
+| **Master Folder** | ❌ Disabled | ✅ Available |
+| **Manual Offset** | ❌ Disabled | ✅ Available |
+| **Best For** | Quick Examination | Batch Processing |
+
 ## Architecture Overview
 
 ### Performance Optimizations
 
-#### Process Pool Architecture
+#### Adaptive Process Management (New)
+The application now uses adaptive ExifTool process management:
+- **Single File Mode**: 1 ExifTool process for minimal resource usage
+- **Full Processing Mode**: 4 concurrent ExifTool processes for maximum throughput
+- **Automatic Switching**: Seamless transition between modes
+
+#### Process Pool Architecture (Full Processing Mode)
 The application uses a pool of ExifTool processes for concurrent operations, providing 5-10x performance improvement for batch operations:
-- 3 concurrent ExifTool processes by default (configurable)
+- 4 concurrent ExifTool processes (configurable)
 - Thread-safe process management with automatic recovery
 - Parallel metadata reading for large file sets
 
@@ -141,7 +202,8 @@ The application uses a pool of ExifTool processes for concurrent operations, pro
 - **File Discovery**: ~5-10x faster with process pool
 - **Metadata Updates**: ~3-5x faster than sequential processing
 - **Scalability**: Tested with 10,000+ files successfully
-- **Memory Usage**: Constant regardless of file count
+- **Memory Usage**: Adaptive based on operation mode
+- **Resource Efficiency**: Optimal process count for each use case
 
 For detailed technical documentation, see:
 - [Design Decisions](docs/DESIGN_DECISIONS.md)

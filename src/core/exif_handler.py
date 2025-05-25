@@ -49,8 +49,16 @@ class ExifHandler:
         """Read all metadata from a file"""
         try:
             logger.debug(f"Reading metadata for {file_path}")
-            with self.exiftool_pool.get_process() as process:
-                metadata = process.read_metadata(file_path)
+
+            # Check if we have a single process for single file mode
+            if hasattr(self, '_single_process') and self._single_process:
+                logger.debug("Using single ExifTool process for single file mode")
+                metadata = self._single_process.read_metadata(file_path)
+            else:
+                # Use the normal pool
+                with self.exiftool_pool.get_process() as process:
+                    metadata = process.read_metadata(file_path)
+
             logger.debug(f"Parsed metadata keys: {list(metadata.keys())}")
             return metadata
         except Exception as e:
@@ -101,8 +109,16 @@ class ExifHandler:
         """Get comprehensive metadata from a file using all ExifTool flags"""
         try:
             logger.debug(f"Getting comprehensive metadata for {file_path}")
-            with self.exiftool_pool.get_process() as process:
-                metadata_text = process.get_comprehensive_metadata(file_path)
+
+            # Check if we have a single process for single file mode
+            if hasattr(self, '_single_process') and self._single_process:
+                logger.debug("Using single ExifTool process for comprehensive metadata")
+                metadata_text = self._single_process.get_comprehensive_metadata(file_path)
+            else:
+                # Use the normal pool
+                with self.exiftool_pool.get_process() as process:
+                    metadata_text = process.get_comprehensive_metadata(file_path)
+
             return metadata_text
         except Exception as e:
             logger.error(f"Error getting comprehensive metadata for {file_path}: {str(e)}")
