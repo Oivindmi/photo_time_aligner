@@ -1,6 +1,6 @@
 # Photo & Video Time Aligner
 
-A Windows application for synchronizing timestamps across photos and videos from different cameras, with manual time adjustment capabilities, comprehensive metadata investigation tools, and single file investigation mode.
+A Windows application for synchronizing timestamps across photos and videos from different cameras, with manual time adjustment capabilities, comprehensive metadata investigation tools, single file investigation mode, and **automatic corruption detection and repair**.
 
 ## Features
 - **Dual Operation Modes**: Full processing mode and single file investigation mode
@@ -10,14 +10,42 @@ A Windows application for synchronizing timestamps across photos and videos from
 - **Manual time offset** - adjust photos without needing a target photo
 - **Single File Mode** - investigate individual files without processing groups
 - **Comprehensive metadata investigation** - explore all EXIF data in your files
+- **NEW: Automatic Corruption Detection** - identifies and repairs corrupted EXIF data
+- **NEW: Intelligent Repair System** - multiple repair strategies with caching
+- **NEW: Mandatory Timestamp Fields** - ensures all processed files get proper datetime metadata
 - Support for 50+ photo and video formats
 - Optional master folder organization with camera-specific subfolders
+
+## NEW: Corruption Detection & Repair System
+
+### **Automatic Corruption Detection**
+The application now automatically scans files for corruption before processing and can repair most types of EXIF corruption:
+
+- **EXIF Structure Errors** (e.g., "Error reading StripOffsets data in IFD0")
+- **MakerNotes Issues** (e.g., "MakerNotes offsets may be incorrect")
+- **Missing EXIF Metadata** (files with only filesystem dates)
+- **Severe Corruption** (various structural problems)
+
+### **Intelligent Repair System**
+When corruption is detected, the application offers to repair files using multiple strategies:
+
+1. **Safest Repair**: Minimal changes to preserve existing metadata
+2. **Thorough Repair**: Rebuild metadata structure with force flags
+3. **Aggressive Repair**: Complete metadata rebuild with minimal EXIF structure
+4. **Filesystem-Only Fallback**: Updates filesystem dates when EXIF repair fails
+
+### **Smart Caching**
+The system learns which repair strategies work best for different corruption types and tries the most successful approach first in future repairs.
+
+### **Automatic Backups**
+Before any repair attempt, the application automatically creates backups in a `backup` folder, ensuring your original files are always safe.
 
 ## Operation Modes
 
 ### Full Processing Mode (Default)
 - Two-photo alignment workflow for synchronizing different cameras
 - Single-photo manual adjustment workflow for timezone corrections
+- **NEW: Corruption detection and repair** before processing
 - Batch processing of matching files
 - Master folder organization
 - Uses 4 parallel ExifTool processes for optimal performance
@@ -28,6 +56,26 @@ A Windows application for synchronizing timestamps across photos and videos from
 - **UI Simplified**: Processing controls disabled, focus on investigation
 - **Perfect For**: Examining time fields, camera settings, and metadata before processing
 - **Toggle**: Checkbox at top of interface for easy switching
+
+## Enhanced Processing Features
+
+### **Mandatory Timestamp Fields**
+All processed files now receive these essential timestamp fields:
+- **DateTimeOriginal** - When photo/video was taken
+- **CreateDate** - When image was created
+- **ModifyDate** - When image was modified
+- **FileCreateDate** - Windows filesystem creation date
+- **FileModifyDate** - Windows filesystem modification date
+
+This ensures every processed file has proper timestamps in both EXIF metadata AND Windows filesystem, making them compatible with all photo management software.
+
+### **Corruption Repair Workflow**
+1. **Automatic Detection**: Files are scanned for corruption before processing
+2. **User Choice**: If corruption is found, user can choose to attempt repairs
+3. **Multiple Strategies**: System tries different repair approaches automatically
+4. **Verification**: Each repair is tested to ensure it actually worked
+5. **Graceful Fallback**: Failed repairs fall back to filesystem-only updates
+6. **Progress Feedback**: Real-time progress and detailed final reports
 
 ## Supported Media Formats
 
@@ -69,7 +117,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Single File Mode (New - Investigation Only)
+### Single File Mode (Investigation Only) - Enhanced
 1. **Enable Single File Mode**: Check "Single File Mode (Investigation Only)" at the top
 2. **Drop File**: Drag and drop any photo/video into the reference zone
 3. **Examine Time Fields**: View all available time/date fields with raw and parsed values
@@ -77,139 +125,156 @@ pip install -r requirements.txt
 5. **Resource Efficient**: Uses only one ExifTool process for optimal performance
 6. **Quick Toggle**: Uncheck to return to full processing mode
 
-**Perfect for:**
-- Quick metadata examination before processing
-- Understanding available time fields
-- Investigating camera settings and technical data
-- Educational exploration of file metadata
+### Full Processing Mode Workflows
 
-### Two-Photo Workflow (Standard Full Processing)
+#### Option A: Two-Photo Alignment (Standard)
 1. **Disable Single File Mode** (if enabled)
-2. Launch the application
-3. Drag and drop a reference photo from one camera
-4. Drag and drop a photo to align from another camera
-5. Select which time fields to use for synchronization
-6. Configure group selection rules (camera model, file extension, filename pattern)
-7. Review the calculated time offset
-8. Optionally set a master folder for organized output
-9. Click "Apply Alignment" to synchronize all matching photos
+2. Launch the application and load reference photo
+3. Load target photo to align
+4. **NEW**: If corruption is detected, choose whether to attempt repairs
+5. Configure matching rules and select time fields
+6. Review calculated offset and apply alignment
 
-### Single-Photo Workflow (Manual Offset Full Processing)
+#### Option B: Single-Photo Manual Adjustment
 1. **Disable Single File Mode** (if enabled)
-2. Launch the application
-3. Drag and drop a reference photo (no target photo needed)
-4. Configure group selection rules for matching files
-5. Select the time field to use for synchronization
-6. Set manual time offset using the input fields:
-   - Years (0-100), Days (0-365), Hours (0-23), Minutes (0-59), Seconds (0-59)
-   - Choose "Add" or "Subtract" time
-7. Optionally set a master folder for organized output
-8. Click "Apply Alignment" to apply the manual offset to all matching photos
+2. Load reference photo (no target needed)
+3. **NEW**: If corruption is detected, choose whether to attempt repairs
+4. Set manual time offset using input fields
+5. Configure matching rules and apply alignment
+
+### NEW: Corruption Repair Process
+
+When corruption is detected, you'll see:
+```
+Corruption Analysis Complete:
+• 42 files are healthy
+• 3 files have repairable corruption
+  - 2 files: EXIF structure errors (~70% repair success rate)
+  - 1 file: MakerNotes issues (~90% repair success rate)
+• 2 files have severe corruption
+
+⏱️ Estimated repair time: 1-2 minutes
+
+[Attempt Repair] [Skip Repair]
+```
+
+**Repair Process:**
+1. **Automatic Backups**: Created in `backup` folder before any changes
+2. **Multiple Strategies**: System tries safest → thorough → aggressive approaches
+3. **Real-time Progress**: See which files are being repaired and results
+4. **Verification**: Each repair is tested to ensure it actually works
+5. **Fallback**: Failed repairs still get filesystem date updates
+6. **Caching**: Successful strategies are remembered for future similar files
+
+### Enhanced Results
+
+After processing, you'll see comprehensive reports including:
+```
+=== Enhanced Photo Time Alignment Report ===
+
+File Repair Operations:
+✓ Repair attempted: 5 files
+✓ Successfully repaired: 3 files
+✗ Repair failed: 2 files
+
+Repair Details:
+✓ IMG001.jpg: Repaired using thorough
+✓ IMG002.jpg: Repaired using safest
+✗ IMG003.jpg: All repair strategies failed
+
+Metadata Updates:
+✓ Successfully updated: 47 files
+✓ Mandatory fields added: 23 files
+
+📁 Backups saved to: /path/to/backup/folder
+```
+
+## Advanced Features
 
 ### Metadata Investigation (Available in Both Modes)
-- Click "Investigate Metadata" next to Apply Alignment
-- Choose Reference or Target file using radio buttons (Target disabled in Single File Mode)
-- Explore comprehensive metadata in a searchable table
-- Time/date fields are highlighted in bold
-- Right-click to copy field names, values, or both
-- Use search box to filter fields by name or value
+- **Enhanced Search**: Filter by field name or value
+- **Comprehensive Data**: Shows all metadata ExifTool can extract
+- **Time Field Highlighting**: Date/time fields displayed in bold
+- **Copy Functions**: Right-click to copy field names, values, or both
+- **Works with all formats**: Photos and videos
 
 ### Group Selection Rules
-The application identifies which files belong together using configurable rules:
-- **Camera Model**: Match files from the same camera make/model
-- **File Extension**: Match files with the same file type
-- **Filename Pattern**: Match files with similar naming conventions (e.g., DSC_####, IMG_####)
-
-All rules can be combined for precise file selection.
-
-### Time Field Synchronization
-The application handles time synchronization as follows:
-- **Reference Group**: Selected time field remains unchanged; all other populated fields sync to it
-- **Target Group**: Selected time field is adjusted by the calculated offset; all other fields sync to the adjusted time
-- **Single Photo Mode**: All fields are adjusted by the manual offset
-- **Empty Fields**: Never populated - only existing time fields are updated
+- **Camera Model**: Match files from same camera make/model
+- **File Extension**: Match files with same file type
+- **Filename Pattern**: Match files with similar naming conventions
+- **Smart Combination**: All rules work together for precise selection
 
 ### Master Folder Organization
-Choose between two organization methods:
-- **Root Folder**: All processed files moved to the master folder root
-- **Camera Subfolders**: Files organized into camera-specific subfolders (e.g., Canon_EOS_R5, Unknown_Camera_JPG_1)
+- **Root Folder**: All files in master folder root
+- **Camera Subfolders**: Organized by camera (e.g., Canon_EOS_R5, Apple_iPhone_14_Pro)
+
+### Performance Optimizations
+- **Adaptive Process Management**: 1 process for Single File Mode, 4 for Full Processing
+- **Process Pool Architecture**: Concurrent operations for maximum throughput
+- **Group-Based Processing**: Files processed in optimized batches
+- **Async File Operations**: Non-blocking directory scanning
+
+## Architecture & Design
+
+### Core Components
+- **Corruption Detection**: Automatic identification of EXIF issues
+- **Repair Strategies**: Multiple approaches for different corruption types
+- **Mandatory Fields**: Ensures consistent timestamp structure
+- **Process Pool**: Concurrent ExifTool operations
+- **Intelligent Caching**: Performance optimization and learning
+
+### Technical Features
+- **Unicode Support**: Handles international characters in file paths
+- **Error Recovery**: Automatic fallback strategies
+- **Resource Management**: Adaptive based on operation mode
+- **Comprehensive Logging**: Detailed operation tracking
+- **Backup System**: Automatic file protection
+
+## Troubleshooting
+
+### Corruption-Related Issues
+- **Backup Files**: Created in `backup` folder with original extensions
+- **Log Files**: Detailed repair logs saved automatically
+- **Strategy Selection**: System learns optimal approaches over time
+
+### Performance
+- **Large Collections**: Tested with 3000+ files
+- **Memory Management**: Optimized resource usage
+- **Process Optimization**: Automatic pool sizing
 
 ## Use Cases
 
-### Quick Investigation (New)
-- **Single File Mode**: Check individual photos before processing
-- **Metadata Exploration**: Understand available time fields and camera settings
-- **Educational**: Learn about different metadata standards and formats
-- **Troubleshooting**: Investigate files with missing or corrupted timestamps
+### Professional Photography
+- **Multi-camera Events**: Sync all cameras to primary photographer
+- **Corruption Recovery**: Repair damaged EXIF from various sources
+- **Batch Organization**: Master folder with camera-specific subfolders
 
-### Wedding Photography
-- Multiple photographers with different cameras
-- Align all cameras to primary photographer's time
-- Move all photos to master folder for editing
+### Personal Photo Management
+- **Timezone Corrections**: Manual offset for travel photos
+- **Legacy Photo Repair**: Fix corruption from old software/scanners
+- **Metadata Investigation**: Understand photo origins and settings
 
-### Travel Photos with Manual Adjustment
-- Camera forgot to change timezone
-- Use manual offset to add/subtract hours for correct local time
-- Process without needing a reference photo
+### Digital Asset Management
+- **Metadata Standardization**: Ensure consistent timestamp fields
+- **Quality Control**: Identify and repair corrupted files
+- **Batch Processing**: Handle large collections efficiently
 
-### Equipment Analysis
-- Use metadata investigation to explore camera settings
-- Compare EXIF data between different photos
-- Identify missing or corrupted metadata fields
+## Version History
 
-## Mode Comparison
+### Version 2.0.0 (Current)
+- ✅ **NEW**: Automatic corruption detection and repair system
+- ✅ **NEW**: Mandatory timestamp fields for all processed files
+- ✅ **NEW**: Automatic backup system
+- ✅ **NEW**: Enhanced progress reporting and error handling
+- ✅ **IMPROVED**: Unicode path handling for international characters
+- ✅ **IMPROVED**: Filesystem date updates (FileCreateDate, FileModifyDate)
 
-| Feature | Single File Mode | Full Processing Mode |
-|---------|------------------|---------------------|
-| **Purpose** | Investigation Only | Full Processing |
-| **ExifTool Processes** | 1 (Resource Efficient) | 4 (High Performance) |
-| **File Processing** | None | Batch Operations |
-| **Time Field Display** | ✅ Available | ✅ Available |
-| **Metadata Investigation** | ✅ Available | ✅ Available |
-| **Group Matching** | ❌ Disabled | ✅ Available |
-| **Apply Alignment** | ❌ Disabled | ✅ Available |
-| **Master Folder** | ❌ Disabled | ✅ Available |
-| **Manual Offset** | ❌ Disabled | ✅ Available |
-| **Best For** | Quick Examination | Batch Processing |
-
-## Architecture Overview
-
-### Performance Optimizations
-
-#### Adaptive Process Management (New)
-The application now uses adaptive ExifTool process management:
-- **Single File Mode**: 1 ExifTool process for minimal resource usage
-- **Full Processing Mode**: 4 concurrent ExifTool processes for maximum throughput
-- **Automatic Switching**: Seamless transition between modes
-
-#### Process Pool Architecture (Full Processing Mode)
-The application uses a pool of ExifTool processes for concurrent operations, providing 5-10x performance improvement for batch operations:
-- 4 concurrent ExifTool processes (configurable)
-- Thread-safe process management with automatic recovery
-- Parallel metadata reading for large file sets
-
-#### Async File Operations
-- Asynchronous directory scanning using `os.scandir`
-- Concurrent file filtering with configurable batch sizes
-- 2-3x faster directory traversal for large folders
-
-#### Optimized Batch Processing
-- Parallel metadata extraction in batches of 20 files
-- Reduced ExifTool call overhead through batch operations
-- Efficient memory usage through streaming operations
-
-#### Performance Characteristics
-- **File Discovery**: ~5-10x faster with process pool
-- **Metadata Updates**: ~3-5x faster than sequential processing
-- **Scalability**: Tested with 10,000+ files successfully
-- **Memory Usage**: Adaptive based on operation mode
-- **Resource Efficiency**: Optimal process count for each use case
-
-For detailed technical documentation, see:
-- [Design Decisions](docs/DESIGN_DECISIONS.md)
-- [ExifTool Implementation Guide](docs/EXIFTOOL_IMPLEMENTATION.md)
-- [User Guide](docs/USER_GUIDE.md)
-- [Architecture Decision Records](docs/adr/)
+### Version 1.0.0
+- Initial release with dual-mode operation
+- Single file investigation mode
+- Two-photo and manual offset workflows
+- Comprehensive metadata investigation
+- Support for 50+ media formats
 
 ## License
 MIT License

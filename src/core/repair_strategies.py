@@ -1,14 +1,13 @@
-# - Repair strategies with caching
+# src/core/repair_strategies.py - Robust repair strategies without caching
 
 import os
-import json
 import tempfile
 import subprocess
 import shutil
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 from enum import Enum
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from .corruption_detector import CorruptionType
 
 logger = logging.getLogger(__name__)
@@ -29,67 +28,11 @@ class RepairResult:
     verification_passed: bool
 
 
-class RepairStrategyCache:
-    """Cache successful repair strategies for different corruption types"""
-
-    def __init__(self, cache_file: str):
-        self.cache_file = cache_file
-        self.cache = self._load_cache()
-
-    def _load_cache(self) -> Dict:
-        """Load cache from file"""
-        try:
-            if os.path.exists(self.cache_file):
-                with open(self.cache_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.debug(f"Could not load repair cache: {e}")
-        return {}
-
-    def save_cache(self):
-        """Save cache to file"""
-        try:
-            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-            with open(self.cache_file, 'w', encoding='utf-8') as f:
-                json.dump(self.cache, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Could not save repair cache: {e}")
-
-    def get_best_strategy(self, corruption_type: CorruptionType) -> Optional[RepairStrategy]:
-        """Get the best known strategy for a corruption type"""
-        type_key = corruption_type.value
-        if type_key in self.cache:
-            strategy_name = self.cache[type_key].get('best_strategy')
-            if strategy_name:
-                try:
-                    return RepairStrategy(strategy_name)
-                except ValueError:
-                    pass
-        return None
-
-    def record_success(self, corruption_type: CorruptionType, strategy: RepairStrategy):
-        """Record a successful repair strategy"""
-        type_key = corruption_type.value
-        if type_key not in self.cache:
-            self.cache[type_key] = {'best_strategy': None, 'success_count': {}}
-
-        strategy_name = strategy.value
-        success_counts = self.cache[type_key]['success_count']
-        success_counts[strategy_name] = success_counts.get(strategy_name, 0) + 1
-
-        # Update best strategy based on success count
-        best_strategy = max(success_counts.items(), key=lambda x: x[1])[0]
-        self.cache[type_key]['best_strategy'] = best_strategy
-
-        self.save_cache()
-
-
 class FileRepairer:
-    """Repair corrupted files using multiple strategies"""
+    """Repair corrupted files using robust single-step strategies"""
 
-    def __init__(self, exiftool_path: str = "exiftool", cache_file: str = None):
+    def __init__(self, exiftool_path: str = "exiftool"):
         self.exiftool_path = exiftool_path
-        self.cache = RepairStrategyCache(cache_file or self._get_default_cache_file())
 
         # Define repair strategies in order of preference
         self.strategies = [
@@ -98,12 +41,6 @@ class FileRepairer:
             RepairStrategy.AGGRESSIVE,
             RepairStrategy.FILESYSTEM_ONLY
         ]
-
-    def _get_default_cache_file(self) -> str:
-        """Get default cache file location"""
-        from pathlib import Path
-        config_dir = Path(os.environ.get('APPDATA', '')) / 'PhotoTimeAligner'
-        return str(config_dir / 'repair_cache.json')
 
     def repair_file(self, file_path: str, corruption_type: CorruptionType,
                     backup_dir: str) -> RepairResult:
@@ -121,19 +58,16 @@ class FileRepairer:
                 verification_passed=False
             )
 
-        # Get strategy order (cached strategy first if available)
-        strategy_order = self._get_strategy_order(corruption_type)
-
-        # Try each strategy until one works
-        for strategy in strategy_order:
+        # Try each strategy in order until one works
+        for strategy in self.strategies:
             logger.debug(f"Trying {strategy.value} repair on {os.path.basename(file_path)}")
 
             try:
                 # Restore from backup before each attempt
                 shutil.copy2(backup_path, file_path)
 
-                # Apply repair strategy
-                repair_success, repair_error = self._apply_repair_strategy(file_path, strategy)
+                # Apply repair strategy (single-step, robust approach)
+                repair_success, repair_error = self._apply_single_step_repair(file_path, strategy)
 
                 if repair_success:
                     # Verify the repair worked
@@ -141,9 +75,6 @@ class FileRepairer:
 
                     if verification_success:
                         logger.info(f"Successfully repaired {os.path.basename(file_path)} using {strategy.value}")
-
-                        # Cache this success
-                        self.cache.record_success(corruption_type, strategy)
 
                         return RepairResult(
                             strategy_used=strategy,
@@ -181,7 +112,8 @@ class FileRepairer:
             os.makedirs(backup_dir, exist_ok=True)
 
             filename = os.path.basename(file_path)
-            backup_path = os.path.join(backup_dir, f"{filename}_backup")
+            name, ext = os.path.splitext(filename)
+            backup_path = os.path.join(backup_dir, f"{name}_backup{ext}")
 
             shutil.copy2(file_path, backup_path)
             logger.debug(f"Created backup: {backup_path}")
@@ -192,35 +124,23 @@ class FileRepairer:
             logger.error(f"Failed to create backup for {file_path}: {e}")
             return None
 
-    def _get_strategy_order(self, corruption_type: CorruptionType) -> List[RepairStrategy]:
-        """Get strategy order with cached strategy first"""
-        cached_strategy = self.cache.get_best_strategy(corruption_type)
+    def _apply_single_step_repair(self, file_path: str, strategy: RepairStrategy) -> Tuple[bool, str]:
+        """Apply repair strategy using single, robust command"""
 
-        if cached_strategy and cached_strategy in self.strategies:
-            # Put cached strategy first, then others
-            strategy_order = [cached_strategy]
-            strategy_order.extend([s for s in self.strategies if s != cached_strategy])
-            logger.debug(f"Using cached strategy {cached_strategy.value} first for {corruption_type.value}")
-            return strategy_order
-        else:
-            return self.strategies.copy()
-
-    def _apply_repair_strategy(self, file_path: str, strategy: RepairStrategy) -> Tuple[bool, str]:
-        """Apply a specific repair strategy"""
-
+        # Create argument file for Unicode safety (like your existing code)
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as arg_file:
             arg_file.write(file_path + '\n')
             arg_file_path = arg_file.name
 
         try:
             if strategy == RepairStrategy.SAFEST:
-                return self._safest_repair(file_path, arg_file_path)
+                return self._safest_single_step(arg_file_path)
             elif strategy == RepairStrategy.THOROUGH:
-                return self._thorough_repair(file_path, arg_file_path)
+                return self._thorough_single_step(arg_file_path)
             elif strategy == RepairStrategy.AGGRESSIVE:
-                return self._aggressive_repair(file_path, arg_file_path)
+                return self._aggressive_single_step(arg_file_path)
             elif strategy == RepairStrategy.FILESYSTEM_ONLY:
-                return True, "Filesystem-only (no repair needed)"  # Always "succeeds"
+                return True, "Filesystem-only (no repair needed)"
             else:
                 return False, f"Unknown strategy: {strategy}"
 
@@ -228,83 +148,93 @@ class FileRepairer:
             if os.path.exists(arg_file_path):
                 os.remove(arg_file_path)
 
-    def _safest_repair(self, file_path: str, arg_file_path: str) -> Tuple[bool, str]:
-        """Safest repair - minimal changes"""
+    def _safest_single_step(self, arg_file_path: str) -> Tuple[bool, str]:
+        """Safest repair - single command, minimal changes"""
+        # Just try to read and rewrite the file with error handling
         cmd = [
             self.exiftool_path,
             '-overwrite_original',
             '-ignoreMinorErrors',
             '-m',
+            '-charset', 'filename=utf8',
+            '-all=',  # Clear problematic metadata
             '-@', arg_file_path
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        success = result.returncode == 0 and ("1 image files updated" in result.stdout or result.stdout.strip() == "")
-        return success, result.stderr or result.stdout
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            success = result.returncode == 0 and (
+                        "1 image files updated" in result.stdout or "updated" in result.stdout.lower())
+            return success, result.stderr or result.stdout
+        except Exception as e:
+            return False, str(e)
 
-    def _thorough_repair(self, file_path: str, arg_file_path: str) -> Tuple[bool, str]:
-        """Thorough repair - rebuild metadata structure"""
-        # Step 1: Clear all metadata
+    def _thorough_single_step(self, arg_file_path: str) -> Tuple[bool, str]:
+        """Thorough repair - single command to rebuild structure"""
+        # Clear all metadata in one robust operation
+        cmd = [
+            self.exiftool_path,
+            '-overwrite_original',
+            '-ignoreMinorErrors',
+            '-m',
+            '-f',  # Force operation
+            '-charset', 'filename=utf8',
+            '-all=',  # Remove all metadata
+            '-@', arg_file_path
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            success = result.returncode == 0
+            return success, result.stderr or result.stdout
+        except Exception as e:
+            return False, str(e)
+
+    def _aggressive_single_step(self, arg_file_path: str) -> Tuple[bool, str]:
+        """Aggressive repair - force clear everything and add minimal structure"""
+        # First clear everything forcefully
         cmd1 = [
             self.exiftool_path,
-            '-all=',
             '-overwrite_original',
-            '-@', arg_file_path
-        ]
-
-        result1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=60)
-        if result1.returncode != 0:
-            return False, f"Clear metadata failed: {result1.stderr}"
-
-        # Step 2: Restore from backup data
-        cmd2 = [
-            self.exiftool_path,
-            '-tagsfromfile', file_path,
-            '-all:all',
-            '-unsafe',
-            '-overwrite_original',
-            '-@', arg_file_path
-        ]
-
-        result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
-        success = result2.returncode == 0
-        return success, result2.stderr or result2.stdout
-
-    def _aggressive_repair(self, file_path: str, arg_file_path: str) -> Tuple[bool, str]:
-        """Aggressive repair - force rebuild with structure fixes"""
-        # Step 1: Force clear all metadata
-        cmd1 = [
-            self.exiftool_path,
-            '-all=',
+            '-ignoreMinorErrors',
+            '-m',
             '-f',  # Force
-            '-overwrite_original',
+            '-G',  # Ignore structure errors
+            '-charset', 'filename=utf8',
+            '-all=',  # Clear all metadata
             '-@', arg_file_path
         ]
 
-        result1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=60)
+        try:
+            result1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=60)
+            if result1.returncode != 0:
+                return False, f"Clear step failed: {result1.stderr}"
 
-        # Step 2: Add minimal EXIF structure
-        cmd2 = [
-            self.exiftool_path,
-            '-EXIF:ColorSpace=1',
-            '-EXIF:ExifVersion=0232',
-            '-overwrite_original',
-            '-@', arg_file_path
-        ]
+            # Then add minimal EXIF structure
+            cmd2 = [
+                self.exiftool_path,
+                '-overwrite_original',
+                '-charset', 'filename=utf8',
+                '-EXIF:ExifVersion=0232',  # Add minimal EXIF
+                '-@', arg_file_path
+            ]
 
-        result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
-        success = result2.returncode == 0
-        return success, result2.stderr or result2.stdout
+            result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
+            success = result2.returncode == 0
+            return success, result2.stderr or result2.stdout
+
+        except Exception as e:
+            return False, str(e)
 
     def _verify_repair(self, file_path: str) -> bool:
-        """Verify that repair was successful by testing datetime update"""
+        """Verify repair by testing datetime update"""
         backup_path = file_path + ".verify_backup"
 
         try:
             # Create backup for verification test
             shutil.copy2(file_path, backup_path)
 
-            # Try updating a datetime field
+            # Try updating a datetime field using same approach as main app
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as arg_file:
                 arg_file.write(file_path + '\n')
                 arg_file_path = arg_file.name
@@ -315,6 +245,7 @@ class FileRepairer:
                     '-overwrite_original',
                     '-ignoreMinorErrors',
                     '-m',
+                    '-charset', 'filename=utf8',
                     '-CreateDate=2021:06:15 14:30:00',
                     '-@', arg_file_path
                 ]
@@ -322,6 +253,7 @@ class FileRepairer:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 success = "1 image files updated" in result.stdout or "1 files updated" in result.stdout
 
+                logger.debug(f"Verification result: {success}, output: {result.stdout}")
                 return success
 
             finally:

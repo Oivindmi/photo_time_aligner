@@ -15,6 +15,10 @@ from .progress_dialog import ProgressDialog
 from .metadata_dialog import MetadataInvestigationDialog
 import logging
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from typing import Dict, List, Optional
+import os
+from datetime import datetime
+from PyQt5.QtWidgets import QMessageBox, QApplication
 
 logger = logging.getLogger(__name__)
 
@@ -855,8 +859,8 @@ class MainWindow(QMainWindow):
             self.master_folder_input.setText(folder)
 
     def apply_alignment(self):
-        """Apply time alignment to all matching files using group-based processing"""
-        logger.info("=== Starting group-based apply_alignment method ===")
+        """Apply time alignment to all matching files with corruption detection and repair"""
+        logger.info("=== Starting enhanced apply_alignment with repair functionality ===")
 
         try:
             # Determine which offset to use
@@ -922,49 +926,49 @@ class MainWindow(QMainWindow):
                     self.progress_dialog.update_progress(current, total, status)
                     QApplication.processEvents()
 
-            # Set the progress callback on the file processor
-            self.file_processor.progress_callback = progress_callback
-
             # Record start time
             start_time = datetime.now()
 
-            # Create processor and run
+            # Create enhanced processor and run with repair functionality
             from ..core import AlignmentProcessor, AlignmentReport
             processor = AlignmentProcessor(self.exif_handler, self.file_processor)
 
-            # Process files using group-based approach
+            # Override the repair choice method to show our UI dialog
+            processor._get_user_repair_choice = self._show_repair_dialog
+
+            # Process files using enhanced approach with corruption detection
             if not self.target_file:
                 # Manual mode: treat reference files as target files so they get the offset
                 manual_offset = offset_to_use
                 # Invert the sign because AlignmentProcessor subtracts target offset
                 inverted_offset = -manual_offset
                 logger.info(f"Manual mode: Processing {len(reference_files)} files as targets")
-                logger.info(f"Original manual offset: {manual_offset}")
-                logger.info(f"Inverted for AlignmentProcessor: {inverted_offset}")
 
                 status = processor.process_files(
                     reference_files=[],
                     target_files=reference_files,
                     reference_field=ref_field,
                     target_field=ref_field,
-                    time_offset=inverted_offset,  # Use inverted offset
+                    time_offset=inverted_offset,
                     master_folder=master_folder,
                     move_files=self.move_files_check.isChecked(),
-                    use_camera_folders=use_camera_folders
+                    use_camera_folders=use_camera_folders,
+                    progress_callback=progress_callback
                 )
             else:
                 # Two-photo mode: normal behavior
                 logger.info(
                     f"Two-photo mode: Processing {len(reference_files)} reference + {len(target_files)} target files")
                 status = processor.process_files(
-                    reference_files=reference_files,  # These get zero offset (stay as reference)
-                    target_files=target_files,  # These get calculated offset applied
+                    reference_files=reference_files,
+                    target_files=target_files,
                     reference_field=ref_field,
                     target_field=target_field,
-                    time_offset=offset_to_use,  # Calculated offset
+                    time_offset=offset_to_use,
                     master_folder=master_folder,
                     move_files=self.move_files_check.isChecked(),
-                    use_camera_folders=use_camera_folders
+                    use_camera_folders=use_camera_folders,
+                    progress_callback=progress_callback
                 )
 
             # Record end time
@@ -973,14 +977,10 @@ class MainWindow(QMainWindow):
             # Hide progress dialog
             self.progress_dialog.close()
 
-            # Generate report
+            # Generate enhanced report with repair information
             report_generator = AlignmentReport(self.config_manager)
-            report_text = report_generator.generate_console_report(
-                status=status,
-                time_offset=offset_to_use,
-                start_time=start_time,
-                end_time=end_time,
-                master_folder_org="Camera-specific subfolders" if use_camera_folders else "Root folder"
+            report_text = self._generate_enhanced_report(
+                status, offset_to_use, start_time, end_time, use_camera_folders
             )
 
             # Print to console
@@ -991,7 +991,7 @@ class MainWindow(QMainWindow):
             if log_path:
                 report_text += f"\n\nLog saved to: {log_path}"
 
-            # Show summary dialog
+            # Show enhanced results dialog
             self.show_results_dialog(status, report_text)
 
             # Reload files after alignment
@@ -1012,6 +1012,115 @@ class MainWindow(QMainWindow):
             # Cleanup progress callback
             if hasattr(self.file_processor, 'progress_callback'):
                 self.file_processor.progress_callback = None
+
+    def _show_repair_dialog(self, corruption_summary: Dict, corruption_results: Dict) -> bool:
+        """Show repair decision dialog to user"""
+        try:
+            from .repair_dialog import RepairDecisionDialog
+
+            dialog = RepairDecisionDialog(corruption_summary, corruption_results, self)
+            dialog.exec_()
+
+            return dialog.get_repair_choice()
+
+        except Exception as e:
+            logger.error(f"Error showing repair dialog: {e}")
+            # Fallback to simple message box
+            reply = QMessageBox.question(
+                self,
+                "Corrupted Files Detected",
+                f"Found {corruption_summary.get('repairable_files', 0)} corrupted files.\n\n"
+                "Attempt to repair them before processing?\n\n"
+                "• Yes: Try to repair files (backups will be created)\n"
+                "• No: Process as-is (corrupted files get filesystem dates only)",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+
+            return reply == QMessageBox.Yes
+
+    def _generate_enhanced_report(self, status, time_offset, start_time, end_time, use_camera_folders):
+        """Generate enhanced report including repair information"""
+
+        from ..core.time_calculator import TimeCalculator
+        offset_str, direction = TimeCalculator.format_offset(time_offset)
+
+        report = []
+        report.append("=== Enhanced Photo Time Alignment Report ===")
+        report.append(f"Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append(f"Completed: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append("")
+        report.append(f"Time Offset Applied: {offset_str}")
+        report.append("")
+
+        # Repair section (if any repairs were attempted)
+        if hasattr(status, 'repair_attempted') and status.repair_attempted > 0:
+            report.append("File Repair Operations:")
+            report.append(f"✓ Repair attempted: {status.repair_attempted} files")
+            report.append(f"✓ Successfully repaired: {status.repair_successful} files")
+            report.append(f"✗ Repair failed: {status.repair_failed} files")
+            report.append("")
+
+            # Repair details
+            if hasattr(status, 'repair_results') and status.repair_results:
+                report.append("Repair Details:")
+                for file_path, repair_result in status.repair_results.items():
+                    filename = os.path.basename(file_path)
+                    if repair_result.success:
+                        report.append(f"✓ {filename}: Repaired using {repair_result.strategy_used.value}")
+                    else:
+                        report.append(f"✗ {filename}: {repair_result.error_message}")
+                report.append("")
+
+        # Metadata updates section
+        report.append("Metadata Updates:")
+        report.append(f"✓ Successfully updated: {status.metadata_updated} files")
+        if status.metadata_errors:
+            report.append(f"✗ Errors: {len(status.metadata_errors)} files")
+        if status.metadata_skipped:
+            report.append(f"⚠ Skipped: {len(status.metadata_skipped)} files")
+        report.append("")
+
+        # File moves section
+        if status.files_moved > 0 or status.move_skipped or status.move_errors:
+            report.append("File Moves:")
+            report.append(f"✓ Successfully moved: {status.files_moved} files")
+            if status.move_skipped:
+                report.append(f"⚠ Skipped: {len(status.move_skipped)} files")
+            if status.move_errors:
+                report.append(f"✗ Errors: {len(status.move_errors)} files")
+            report.append("")
+
+        # Summary
+        report.append("Summary:")
+        report.append(f"- Total files processed: {status.total_files}")
+        report.append(f"- Successfully processed: {status.metadata_updated}/{status.total_files} files")
+
+        if hasattr(status, 'repair_successful') and status.repair_successful > 0:
+            report.append(f"- Files repaired: {status.repair_successful} files")
+
+        if status.metadata_errors:
+            report.append(f"- Metadata update errors: {len(status.metadata_errors)} files")
+        if status.files_moved > 0:
+            report.append(f"- Files moved to master folder: {status.files_moved} files")
+
+        # Master folder organization
+        if status.camera_folders:
+            report.append("")
+            folder_org = "Camera-specific subfolders" if use_camera_folders else "Root folder"
+            report.append(f"Master Folder Organization: {folder_org}")
+            for camera_id, folder_path in sorted(status.camera_folders.items()):
+                file_count = self._count_files_in_folder(folder_path)
+                report.append(f"- {folder_path}: {file_count} files")
+
+        return "\n".join(report)
+
+    def _count_files_in_folder(self, folder_path: str) -> int:
+        """Count the number of files in a folder"""
+        try:
+            return len([f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))])
+        except:
+            return 0
 
     def show_results_dialog(self, status, report_text):
         """Show results dialog with summary"""
