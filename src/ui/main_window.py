@@ -781,16 +781,39 @@ class MainWindow(QMainWindow):
             processor = AlignmentProcessor(self.exif_handler, self.file_processor)
 
             # Process files using group-based approach
-            status = processor.process_files(
-                reference_files=reference_files,
-                target_files=target_files,
-                reference_field=ref_field,
-                target_field=target_field,
-                time_offset=offset_to_use,
-                master_folder=master_folder,
-                move_files=self.move_files_check.isChecked(),
-                use_camera_folders=use_camera_folders
-            )
+            if not self.target_file:
+                # Manual mode: treat reference files as target files so they get the offset
+                manual_offset = offset_to_use
+                # Invert the sign because AlignmentProcessor subtracts target offset
+                inverted_offset = -manual_offset
+                logger.info(f"Manual mode: Processing {len(reference_files)} files as targets")
+                logger.info(f"Original manual offset: {manual_offset}")
+                logger.info(f"Inverted for AlignmentProcessor: {inverted_offset}")
+
+                status = processor.process_files(
+                    reference_files=[],
+                    target_files=reference_files,
+                    reference_field=ref_field,
+                    target_field=ref_field,
+                    time_offset=inverted_offset,  # Use inverted offset
+                    master_folder=master_folder,
+                    move_files=self.move_files_check.isChecked(),
+                    use_camera_folders=use_camera_folders
+                )
+            else:
+                # Two-photo mode: normal behavior
+                logger.info(
+                    f"Two-photo mode: Processing {len(reference_files)} reference + {len(target_files)} target files")
+                status = processor.process_files(
+                    reference_files=reference_files,  # These get zero offset (stay as reference)
+                    target_files=target_files,  # These get calculated offset applied
+                    reference_field=ref_field,
+                    target_field=target_field,
+                    time_offset=offset_to_use,  # Calculated offset
+                    master_folder=master_folder,
+                    move_files=self.move_files_check.isChecked(),
+                    use_camera_folders=use_camera_folders
+                )
 
             # Record end time
             end_time = datetime.now()
