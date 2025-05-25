@@ -17,6 +17,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Test imports at the top of main.py
+try:
+    from src.core import CorruptionDetector, FileRepairer
+    from src.ui import RepairDecisionDialog
+    print("✅ Repair functionality imports successful")
+except ImportError as e:
+    print(f"❌ Import error: {e}")
 
 def main():
     app = QApplication(sys.argv)

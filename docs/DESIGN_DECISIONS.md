@@ -1,429 +1,238 @@
-# Photo Time Aligner - Design Decisions and Architecture
+# Photo Time Aligner - Design Decisions and Architecture (Updated)
 
 ## Overview
-This document captures the key design decisions made during the development of Photo Time Aligner, explaining the rationale behind architectural choices and their impact on the final implementation.
+This document captures the key design decisions made during the development of Photo Time Aligner, explaining the rationale behind architectural choices and their impact on the final implementation, including the major v2.0 corruption detection and repair system.
 
 ## Core Design Philosophy
 
-### Simplicity First
-- **Decision**: Keep the codebase minimal and focused
-- **Rationale**: Avoid over-engineering for a specialized tool
-- **Impact**: No unnecessary caching, database, or complex abstractions
+### Reliability Over Performance
+- **Decision**: Prioritize robustness and data safety over speed optimization
+- **Rationale**: Photo data is irreplaceable; better to be slow and safe than fast and risky
+- **Impact**: Led to comprehensive backup systems and conservative repair strategies
 
-### Dual-Mode Operation (New)
-- **Decision**: Implement both investigation-only and full-processing modes
-- **Rationale**: Users often need different approaches - sometimes just examining files, sometimes processing them
-- **Impact**: Adaptive resource management and simplified workflows for different use cases
+### User-Centric Error Handling
+- **Decision**: Provide clear choices and transparency when problems occur
+- **Rationale**: Users should understand what's happening and make informed decisions
+- **Impact**: Detailed corruption reports and repair choice dialogs
 
-### User Experience Priority
-- **Decision**: Continuous drag-and-drop operation with flexible workflows
-- **Rationale**: Users often need different approaches - sometimes comparing two photos, sometimes adjusting a single photo, sometimes just investigating
-- **Impact**: UI adapts to different modes and supports multiple workflows seamlessly
+### Adaptive Resource Management
+- **Decision**: Different resource allocation based on operation mode and task complexity
+- **Rationale**: Investigation tasks need minimal resources, batch processing needs maximum throughput
+- **Impact**: 1 process for investigation, 4 processes for batch processing, intelligent repair strategies
 
-### Comprehensive Metadata Access
-- **Decision**: Provide full access to all available metadata
-- **Rationale**: Users need to investigate and understand their file metadata for informed decisions
-- **Impact**: Added metadata investigation feature with complete ExifTool output
+## Major Architecture Evolution (v2.0)
 
-## User Interface Decisions
+### Corruption Detection and Repair System
 
-### Single File Mode Implementation (New)
-- **Decision**: Add toggleable "Single File Mode" rather than separate application or window
-- **Options Considered**:
-  - Separate investigation application
-  - Tab-based interface
-  - Wizard-style workflow
-  - Toggle mode with selective UI disable (chosen)
-- **Rationale**: Single interface with adaptive controls reduces complexity while providing focused workflows
-- **Impact**: Users can quickly switch between investigation and processing without learning new interfaces
+#### ADR-013: Corruption Detection Integration
+**Status**: Accepted  
+**Decision**: Integrate corruption detection into normal processing workflow  
+**Rationale**: Users shouldn't need separate tools to handle corrupted files  
+**Alternatives Considered**: Separate repair utility, manual corruption handling, ignore corruption entirely  
+**Implementation**: Automatic scanning before processing with user choice for repair  
 
-### Adaptive Resource Management (New)
-- **Decision**: Use different ExifTool process counts based on mode
-- **Implementation**: 1 process for Single File Mode, 4 processes for Full Processing Mode
-- **Rationale**: Optimize resources for the task at hand
-- **Impact**: Better performance and lower resource usage when appropriate
+#### ADR-014: Multiple Repair Strategy Approach
+**Status**: Accepted  
+**Decision**: Implement graduated repair strategies (Safest → Thorough → Aggressive → Filesystem-only)  
+**Rationale**: Different corruption types need different approaches; allows graceful degradation  
+**Implementation**: Single-step robust commands with automatic fallback chain  
+**Performance Impact**: Minimal - repair is rare and reliability is paramount  
 
-### Dual Workflow Support
-- **Decision**: Support both two-photo alignment and single-photo manual offset
-- **Options Considered**:
-  - Two-photo workflow only (original)
-  - Wizard-style sequential interface
-  - Tabbed interface for different modes
-  - Single interface with adaptive controls (chosen)
-- **Rationale**: Single interface adapts based on loaded photos, reducing complexity
-- **Impact**: Manual offset controls appear when target photo is missing
+#### ADR-016: Automatic Backup System
+**Status**: Accepted  
+**Decision**: Always create backups before repair attempts  
+**Rationale**: Repair operations carry inherent risk; data safety is paramount  
+**Implementation**: Backup folder with proper file extensions for easy recovery  
+**User Experience**: Files remain accessible as normal images/videos  
 
-### Manual Time Offset Design
-- **Decision**: Comprehensive time input (years, days, hours, minutes, seconds)
-- **Rationale**: Users need flexibility for various correction scenarios (timezone, date errors, precision adjustments)
-- **Implementation**: Single-line compact layout with validation
-- **Impact**: Handles everything from timezone corrections to date restoration
+### Mandatory Timestamp Fields Enhancement
 
-### Metadata Investigation Integration
-- **Decision**: Integrated button with file selection rather than separate window
-- **Rationale**: Investigation is part of the workflow, not a separate tool
-- **Implementation**: Modal dialog with comprehensive search and copy features
-- **Impact**: Users can investigate metadata while maintaining main workflow context
+#### ADR-017: Universal Timestamp Field Population
+**Status**: Accepted  
+**Decision**: Ensure all processed files have essential timestamp fields regardless of original state  
+**Rationale**: Provides consistency and upgrades files with missing metadata  
+**Implementation**: Populate DateTimeOriginal, CreateDate, ModifyDate, FileCreateDate, FileModifyDate  
+**Impact**: Every processed file becomes fully compatible with photo management software  
 
-### Drag & Drop Interface
-- **Decision**: Single window with two drop zones
-- **Options Considered**:
-  - Sequential file selection via context menu
-  - Clipboard-based selection
-  - System tray monitoring
-  - Drag & drop window (chosen)
-- **Rationale**: Most intuitive for comparing two photos side-by-side
-- **Impact**: Clear visual metaphor for the alignment process
+#### ADR-018: Filesystem Date Integration
+**Status**: Accepted  
+**Decision**: Update Windows filesystem dates alongside EXIF metadata  
+**Rationale**: Ensures consistency between EXIF data and Explorer display  
+**Implementation**: FileCreateDate and FileModifyDate updates via ExifTool  
+**User Benefit**: Files show correct dates in Windows Explorer and photo software  
 
-### Real-time Feedback
-- **Decision**: Calculate offset immediately when fields are selected
-- **Rationale**: Instant feedback improves user confidence
-- **Impact**: No need for separate "Calculate" button
+## Technical Architecture Decisions
 
-## File Processing Architecture
+### Robust Repair Strategy Implementation
 
-### Adaptive Process Management (New)
-- **Decision**: Different ExifTool configurations based on operation mode
-- **Implementation**:
-  - Single File Mode: 1 ExifTool process for minimal resource usage
-  - Full Processing Mode: 4 ExifTool processes for maximum throughput
-  - Automatic switching between configurations
-- **Rationale**: Optimize resources for the specific task
-- **Impact**: Better performance characteristics and user experience
+#### ADR-019: Single-Step Repair Commands
+**Status**: Accepted  
+**Decision**: Use single, self-contained repair commands instead of complex multi-step processes  
+**Rationale**: Multi-step processes had interdependency failures; single steps are more reliable  
+**Alternatives Considered**: Complex multi-step rebuilds, direct file manipulation, external repair tools  
+**Implementation**: Each repair strategy is one robust ExifTool command  
+**Testing**: Validated against manually tested repair approaches  
 
-### Group Identification Strategy
-- **Decision**: Three independent, combinable filters
-- **Implementation**:
-  1. Camera Model (primary)
-  2. File Extension (secondary)
-  3. Filename Pattern (tertiary)
-- **Rationale**: Handles various scenarios (missing EXIF, mixed folders)
-- **Impact**: Flexible matching without complex cascading logic
+#### ADR-020: Hybrid Unicode Handling for Repairs
+**Status**: Accepted  
+**Decision**: Combine argument files (for Unicode safety) with simplified commands (for reliability)  
+**Rationale**: Need both Unicode path support and command reliability  
+**Implementation**: UTF-8 argument files with `-charset filename=utf8` flags  
+**Consistency**: Matches existing application Unicode handling patterns  
 
-### Filename Pattern Matching
-- **Decision**: Smart pattern learning with manual toggle
-- **Rationale**: Screenshots and some cameras lack EXIF data
-- **Implementation**: Detects patterns like DSC_####, IMG_####, Screenshot_*, VID_####
-- **Impact**: Enables processing of files without camera metadata
+### Error Detection and Classification
 
-### Empty Camera Metadata Handling
-- **Decision**: Empty metadata matches only other empty metadata
-- **Rationale**: Prevents false positives in mixed folders
-- **Impact**: Accurate grouping for screenshots and metadata-less files
+#### ADR-021: Comprehensive Corruption Classification
+**Status**: Accepted  
+**Decision**: Classify corruption types to optimize repair strategy selection  
+**Types**: EXIF structure errors, MakerNotes issues, missing metadata, severe corruption  
+**Rationale**: Different corruption types respond to different repair approaches  
+**Implementation**: Pattern matching against ExifTool error messages
 
-## Time Synchronization Logic
+#### ADR-022: Verification-Based Success Determination
+**Status**: Accepted  
+**Decision**: Verify repair success by testing actual datetime field updates  
+**Rationale**: ExifTool may report success even when repair didn't fully work  
+**Implementation**: Test datetime update after each repair attempt
 
-### Unified Processing Architecture
-- **Decision**: Single processing path for both calculated and manual offsets
-- **Rationale**: Consistent behavior regardless of offset source
-- **Implementation**: AlignmentProcessor accepts any timedelta offset
-- **Impact**: Manual and calculated offsets processed identically
+## User Experience Design Decisions
 
-### Field Synchronization Approach
-- **Decision**: Sync all fields within each file to selected field
-- **Rationale**: Maintains consistency within individual files
-- **Implementation**:
-  - Reference files: All fields → selected field value
-  - Target files: All fields → (selected field + offset)
-  - Manual mode: All fields → (selected field + manual offset)
-- **Impact**: Preserves relative timestamps between files
+### Transparent Corruption Handling
 
-### Timezone Handling
-- **Decision**: Strip all timezone information
-- **Rationale**: Avoid offset-naive vs offset-aware datetime errors
-- **Impact**: Simplified time calculations, consistent behavior
+#### ADR-023: Silent Detection with Informed Choice
+**Status**: Accepted  
+**Decision**: Detect corruption silently, only surface repair choice when needed  
+**Rationale**: Don't interrupt workflow unless user input is required  
+**Implementation**: Show detailed corruption analysis only when corruption is found  
+**User Control**: Clear choice between repair attempt and skip repair  
 
-### Empty Field Policy
-- **Decision**: Never populate empty/missing fields
-- **Rationale**: Respect original file structure
-- **Impact**: Non-destructive updates only
+#### ADR-024: Comprehensive Progress Reporting
+**Status**: Accepted  
+**Decision**: Provide both real-time progress and detailed final reports for repair operations  
+**Rationale**: Repair operations can take time; users need feedback and results summary  
+**Implementation**: Simple progress during repair, comprehensive results afterward  
+**Transparency**: Users know exactly which files were repaired and which strategies worked  
 
-## Metadata Investigation Architecture
+### Backup and Recovery Strategy
 
-### Mode-Aware Operation (New)
-- **Decision**: Same investigation dialog works in both Single File Mode and Full Processing Mode
-- **Rationale**: Consistent user experience across modes
-- **Implementation**: Dialog adapts radio button availability based on current mode
-- **Impact**: Seamless investigation regardless of operation mode
+#### ADR-025: Accessible Backup Format
+**Status**: Accepted  
+**Decision**: Create backups with proper file extensions (e.g., `photo_backup.jpg` not `photo.jpg_backup`)  
+**Rationale**: Users should be able to open and view backup files normally  
+**Implementation**: Split filename and extension, append `_backup` to name part  
+**User Benefit**: Backup files can be opened with standard image viewers  
 
-### Comprehensive Data Access
-- **Decision**: Use ExifTool's most comprehensive flags (-a -u -g1)
-- **Rationale**: Users need access to all available metadata, not filtered subsets
-- **Implementation**: Separate comprehensive metadata extraction method
-- **Impact**: Shows everything ExifTool can extract, letting users filter as needed
+#### ADR-026: Local Backup Storage
+**Status**: Accepted  
+**Decision**: Store backups in `backup` folder alongside processed files  
+**Rationale**: Keep backups close to originals for easy access and management  
+**Alternatives Considered**: Centralized backup location, temporary files, cloud storage  
+**Implementation**: Create backup subfolder in same directory as source files  
+**User Control**: Users can easily find and manage backup files  
 
-### Single-File Processing
-- **Decision**: Process only the selected file for investigation
-- **Rationale**: Investigation is focused on understanding one file at a time
-- **Implementation**: Argument file with single filename to avoid batch processing
-- **Impact**: Fast, focused metadata extraction without performance issues
+## Performance and Scalability Decisions
 
-### Structured Presentation
-- **Decision**: Flat list with group headers and search functionality
-- **Rationale**: Balance between structure and searchability
-- **Implementation**: Parse ExifTool grouped output into searchable table
-- **Impact**: Easy to find specific fields while maintaining organization
+### Adaptive Resource Management (Enhanced)
 
-### Time Field Highlighting
-- **Decision**: Bold formatting for date/time related fields
-- **Rationale**: Time fields are primary user interest without hiding other data
-- **Implementation**: Keyword matching against field names
-- **Impact**: Quick identification of relevant fields while preserving complete data
+#### ADR-027: Mode-Aware Process Allocation
+**Status**: Accepted  
+**Decision**: Use different ExifTool process counts based on operation mode and complexity  
+**Implementation**:
+- Single File Mode: 1 process (investigation only)
+- Full Processing Mode: 4 processes (batch operations)
+- Repair Operations: Use existing process pool efficiently
+**Rationale**: Match resource usage to actual needs  
+**Impact**: Better system resource utilization and user experience  
 
-## Performance and Scalability
+#### ADR-028: Repair Strategy Optimization
+**Status**: Rejected  
+**Decision**: Optimize repair operations through intelligent caching and strategy ordering  
+**Implementation**: Try cached successful strategies first, then fallback to full strategy chain  
+**Performance**: Reduces average repair time for similar corruption types  
+**Learning**: System becomes more efficient over time  
 
-### Adaptive Resource Management (New)
-- **Decision**: Different resource allocation based on operation mode
-- **Implementation**:
-  - Single File Mode: Minimal resources (1 ExifTool process)
-  - Full Processing Mode: Maximum resources (4 ExifTool processes)
-  - Automatic transition between modes
-- **Rationale**: Optimize system resources for the task at hand
-- **Impact**: Better user experience and system performance
+## Quality Assurance and Testing
 
-### Threading Architecture
-- **Decision**: QThread for file scanning only
-- **Rationale**: Keep UI responsive during long operations
-- **Impact**: Smooth user experience with large folders
+### Comprehensive Validation Approach
 
-### ExifTool Integration Evolution
+#### ADR-029: Multi-Level Testing Strategy
+**Status**: Accepted  
+**Decision**: Test repair strategies at multiple levels - individual commands, integration, real-world files  
+**Implementation**: Unit tests for repair commands, integration tests for workflow, manual testing with user files  
+**Validation**: Each repair strategy validated against actual corrupted files  
+**Regression**: Maintain test corpus of known problematic files  
 
-#### Problem: Stack Overflow with Large File Sets
-- **Issue**: Application crashed with stack overflow error (0xC0000409) when processing 50+ files
-- **Root Cause**: Large JSON responses from ExifTool were causing recursive parsing to exceed stack limits
-
-#### Solution: Hybrid Approach
-1. **Persistent Process**: Single ExifTool instance eliminates startup overhead
-2. **Argument Files**: Use `-@` flag for reliable Windows path handling
-3. **Batch Processing**: Process files in chunks of 50
-4. **Incremental Updates**: Emit results progressively
-
-#### Performance Characteristics
-- **File Discovery**: ~5-10x faster with persistent process
-- **Metadata Updates**: ~3-5x faster than individual calls
-- **Memory Usage**: Adaptive based on mode
-- **Scalability**: Tested with 500+ files successfully
-
-### Performance Optimization Evolution (May 2024)
-
-#### Problem: Single Process Bottleneck
-- **Issue**: Single ExifTool process limited throughput to ~10 files/second
-- **Root Cause**: Sequential processing with process startup overhead
-
-#### Solution: Process Pool Architecture
-1. **ExifTool Process Pool**: Variable concurrent processes handle operations in parallel
-2. **Async Directory Scanning**: Using `os.scandir` and asyncio for I/O operations
-3. **Batch Metadata Operations**: Process files in groups of 20
-4. **Simplified Architecture**: Removed caching layer that caused recursion issues
-
-#### Performance Improvements
-- **Before**: 50 files in ~5 seconds (10 files/second)
-- **After**: 50 files in ~1 second (50 files/second)
-- **Large Folders**: 1000+ files processed without UI freezing
-- **Single File Mode**: Minimal resource usage for investigation tasks
-
-### Metadata Investigation Performance
-- **Decision**: Use appropriate process architecture for investigation
-- **Implementation**: Single process in Single File Mode, pool process in Full Processing Mode
-- **Impact**: Fast metadata extraction without unnecessary resource usage
-
-### Architecture Simplification
-- **Decision**: Remove backward compatibility code
-- **Rationale**: Cleaner codebase, easier maintenance
-- **Impact**: All file scanning now uses async operations exclusively
-
-### Windows-Specific Optimizations
-- **Decision**: Handle command line length limits
-- **Implementation**: Chunk processing when paths exceed 32KB
-- **Impact**: Reliable operation with large folders
-
-## Error Handling and Recovery
-
-### Mode-Aware Error Handling (New)
-- **Decision**: Different error handling strategies based on operation mode
-- **Implementation**: Single File Mode uses simple error messages, Full Processing Mode uses comprehensive error reporting
-- **Rationale**: Match error complexity to user expectations in each mode
-- **Impact**: Appropriate error feedback without overwhelming users
-
-### Graceful Degradation
-- **Decision**: Fallback from batch to individual processing
-- **Rationale**: Better to be slow than to fail
-- **Impact**: Reliable operation even with problematic files
-
-### Comprehensive Logging
-- **Decision**: Detailed logging with multiple levels
-- **Implementation**: Console + file logging with DEBUG option
-- **Impact**: Easier troubleshooting and user support
-
-### Process Recovery
-- **Decision**: Automatic ExifTool restart on failure
-- **Rationale**: Long-running operations shouldn't fail completely
-- **Impact**: Robust operation over extended sessions
+#### ADR-030: Conservative Repair Defaults
+**Status**: Accepted  
+**Decision**: Default to safest repair approaches first, only escalate to aggressive methods when needed  
+**Rationale**: Preserve as much original metadata as possible  
+**Implementation**: Safest → Thorough → Aggressive → Filesystem-only progression  
+**User Safety**: Minimal risk of metadata loss while maximizing repair success  
 
 ## Configuration and Persistence
 
-### Mode Preference Persistence (New)
-- **Decision**: Save Single File Mode preference between sessions
-- **Rationale**: Users often have preferred workflows
-- **Implementation**: Boolean flag in JSON configuration
-- **Impact**: Application remembers user's preferred mode
+### Enhanced Configuration Management
 
-### Settings Storage
-- **Decision**: JSON file in AppData
-- **Rationale**: Simple, human-readable, portable
-- **Impact**: Easy backup and troubleshooting
-
-### Manual Offset Persistence
-- **Decision**: Don't persist manual offset values between sessions
-- **Rationale**: Manual offsets are typically one-time corrections
-- **Impact**: Clean slate for each session, preventing accidental reuse
-
-### No Auto-Update
-- **Decision**: Manual updates only
-- **Rationale**: Simplicity and user control
-- **Impact**: Predictable behavior, no surprise changes
-
-## Media Format Support
-
-### Comprehensive Format Coverage
-- **Decision**: Support 50+ photo and video formats
-- **Rationale**: Users have diverse camera equipment
-- **Impact**: Single tool for all media types
-
-### Uniform Processing
-- **Decision**: Treat photos and videos identically
-- **Implementation**: ExifTool handles both transparently
-- **Impact**: No special cases in code
-
-## UI/UX Improvements
-
-### Mode Toggle Design (New)
-- **Decision**: Prominent checkbox at top of interface
-- **Rationale**: Mode selection should be immediately visible and accessible
-- **Implementation**: Checkbox with descriptive tooltip
-- **Impact**: Clear mode indication and easy switching
-
-### Adaptive UI Controls (New)
-- **Decision**: Selectively enable/disable controls based on mode rather than hiding them
-- **Rationale**: Users understand disabled controls better than missing controls
-- **Implementation**: Qt's built-in disabled styling
-- **Impact**: Intuitive interface state indication
-
-### Apply Button Logic
-- **Decision**: Enable apply button when reference photo is loaded (unless in Single File Mode)
-- **Rationale**: Both workflows should be equally accessible, but processing should be disabled in investigation mode
-- **Impact**: Users can process single photos as easily as photo pairs, but investigation mode prevents accidental processing
-
-### Adaptive Controls
-- **Decision**: Manual offset controls automatically enable/disable based on loaded photos and mode
-- **Rationale**: Clear visual indication of which workflow is active
-- **Impact**: Prevents user confusion about which workflow is active
-
-### Status Bar Communication (New)
-- **Decision**: Use status bar to indicate current mode and resource usage
-- **Implementation**: Different messages for each mode with resource information
-- **Rationale**: Users should understand what resources are being used
-- **Impact**: Transparency about application behavior and resource usage
-
-### Comprehensive Help
-- **Decision**: Detailed documentation with use cases and examples
-- **Rationale**: Complex tool with multiple modes requires thorough explanation
-- **Impact**: Users can understand and effectively use all features
-
-## Architecture Decision Records
-
-### ADR-010: Single File Mode Implementation (New)
+#### ADR-032: Mode Preference Persistence (Enhanced)
 **Status**: Accepted  
-**Decision**: Implement Single File Mode as a toggle within the main interface  
-**Rationale**: Users need quick investigation capabilities without the overhead of full processing setup  
-**Alternatives Considered**: Separate application, tab interface, wizard workflow  
-**Implementation**: Checkbox toggle with selective UI disable and adaptive resource management  
+**Decision**: Remember user's preferred operation mode and expand to include repair preferences  
+**Implementation**: Boolean flags in configuration for mode preferences  
+**User Experience**: Application remembers user workflow preferences  
 
-### ADR-011: Adaptive Resource Management (New)
+## Security and Data Safety
+
+### Comprehensive Data Protection
+
+#### ADR-033: Defense-in-Depth Backup Strategy
 **Status**: Accepted  
-**Decision**: Use different ExifTool process counts based on operation mode  
-**Rationale**: Optimize resources for the specific task - investigation needs minimal resources, processing needs maximum throughput  
-**Implementation**: 1 process for Single File Mode, 4 processes for Full Processing Mode  
-**Impact**: Better performance characteristics and resource utilization  
+**Decision**: Multiple layers of data protection during repair operations  
+**Layers**:
+1. Pre-repair backup creation
+2. Verification testing with separate backup
+3. Restore capability from backups
+4. Detailed logging of all operations
+**Rationale**: Repair operations inherently carry risk; maximize protection  
 
-### ADR-012: Mode-Aware UI Design (New)
+#### ADR-034: Unicode and Special Character Handling
 **Status**: Accepted  
-**Decision**: Disable rather than hide UI elements in Single File Mode  
-**Rationale**: Users understand disabled controls better than missing ones  
-**Implementation**: Selective enable/disable of UI elements based on mode  
-**Alternatives Considered**: Hidden elements, separate interfaces, modal dialogs  
+**Decision**: Comprehensive Unicode support throughout repair system  
+**Implementation**: UTF-8 argument files, charset flags, consistent encoding handling  
+**Scope**: Handles Norwegian characters (Ø, Æ, Å) and other international characters  
+**Consistency**: Matches existing application Unicode handling patterns  
 
-## Abandoned Approaches
+## Future Architecture Considerations
 
-### Separate Investigation Application
-- **Considered**: Standalone metadata investigation tool
-- **Rejected**: Context switching between applications is inefficient
-- **Chosen Instead**: Integrated Single File Mode
+### Extensibility and Evolution
 
-### Tab-Based Mode Selection
-- **Considered**: Tabs for "Processing" and "Investigation"
-- **Rejected**: Takes up valuable UI space and creates artificial separation
-- **Chosen Instead**: Toggle checkbox with adaptive interface
+#### Planned Enhancements
+- **Advanced Repair Strategies**: More specialized approaches for specific camera types
+- **Batch Repair Operations**: Handle large sets of corrupted files efficiently
+- **Repair Analytics**: Detailed statistics on repair success rates and patterns
+- **Cloud Backup Integration**: Optional cloud storage for backups
+- **Recovery Tools**: Advanced tools for extracting data from severely corrupted files
 
-### Always-On Process Pool
-- **Considered**: Keep 4 ExifTool processes running regardless of mode
-- **Rejected**: Wasteful of resources when only investigating files
-- **Chosen Instead**: Adaptive process management
+#### Architecture Flexibility
+- **Plugin System**: Extensible repair strategy framework
+- **External Tool Integration**: Support for specialized repair utilities
+- **API Layer**: Enable external applications to use repair functionality
+- **Cross-Platform Support**: Extend repair capabilities to Linux and macOS
 
-### Database Storage
-- **Considered**: SQLite for metadata caching
-- **Rejected**: Unnecessary complexity for single-session tool
+## Lessons Learned
 
-### Complex Threading
-- **Considered**: Worker pools for parallel processing
-- **Rejected**: ExifTool batch mode sufficient
+### Key Insights from v2.0 Development
 
-### Automatic Backup
-- **Considered**: Backup before modification
-- **Rejected**: User preference for speed over safety
+1. **Corruption is More Common Than Expected**: Many users have files with various levels of EXIF corruption
+2. **User Education is Critical**: Users need to understand corruption risks and repair options
+3. **Conservative Approaches Work Best**: Safest repair strategies have highest success rates
+4. **Backup Systems Must Be User-Friendly**: Backups with proper extensions are essential
+5. **Performance vs Reliability Trade-offs**: Users prefer reliability over speed for repair operations
 
-### Recursive Folder Scanning
-- **Considered**: Process subfolders automatically
-- **Rejected**: User wants explicit control
+### Design Philosophy Validation
 
-### Wizard Interface
-- **Considered**: Step-by-step workflow wizard
-- **Rejected**: Single adaptive interface more efficient
+The v2.0 enhancement validates several core design principles:
+- **User-Centric Design**: Providing clear choices and transparency improves user confidence
+- **Reliability First**: Conservative defaults with aggressive fallbacks provides optimal balance
+- **Adaptive Resource Management**: Matching resources to task complexity improves overall experience
+- **Comprehensive Error Handling**: Graceful degradation ensures no files are left unprocessed
 
-### Resource-Heavy Investigation
-- **Considered**: Use full process pool for metadata investigation
-- **Rejected**: Wasteful for single-file operations
-- **Chosen Instead**: Single process for investigation, pool for processing
-
-### Hidden UI Elements in Single File Mode
-- **Considered**: Hide processing controls completely in Single File Mode
-- **Rejected**: Users prefer to see disabled controls rather than missing ones
-- **Chosen Instead**: Selective disable with visual feedback
-
-## Future Considerations
-
-### Advanced Investigation Features
-- **Enhanced Comparison**: Side-by-side metadata comparison in Single File Mode
-- **Batch Investigation**: Investigate multiple files without processing
-- **Export Capabilities**: Export metadata investigations to CSV/JSON
-- **Visualization**: Graphical representation of time field relationships
-
-### Performance Improvements
-- **Dynamic Pool Sizing**: Adjust process count based on system resources and workload
-- **Memory Management**: Better resource cleanup and monitoring
-- **Caching Strategy**: Intelligent metadata caching for frequently accessed files
-- **Background Operations**: Pre-load metadata for better responsiveness
-
-### User Experience Enhancements
-- **Workflow Wizards**: Guided setup for complex scenarios
-- **Template System**: Save and reuse common processing configurations
-- **Drag and Drop Improvements**: Multiple file selection and batch operations
-- **Keyboard Shortcuts**: More comprehensive keyboard navigation
-
-### Architecture Evolution
-- **Plugin System**: Extensible architecture for custom processing
-- **API Layer**: External tool integration capabilities
-- **Cloud Integration**: Support for cloud storage metadata operations
-- **Cross-Platform**: Linux and macOS support
-
-These design decisions resulted in a flexible, resource-efficient tool that supports both quick investigation and comprehensive processing workflows while maintaining simplicity and performance across different use cases.
+These design decisions resulted in a robust, user-friendly system that handles corruption gracefully while maintaining the simplicity and effectiveness of the original photo alignment workflow.
