@@ -173,36 +173,53 @@ class ExifToolProcess:
         return results[0] if results else {}
 
     def update_datetime_fields(self, file_path: str, fields: Dict[str, Any]) -> bool:
-        """Update datetime fields using argument file approach with persistent process"""
+        """Update datetime fields using argument file approach with MakerNotes handling"""
         # Create temporary argument file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as arg_file:
             arg_file.write(file_path + '\n')
             arg_file_path = arg_file.name
 
         try:
-            cmd = ['-charset', 'filename=utf8', '-overwrite_original']
+            cmd = ['-charset', 'filename=utf8', '-overwrite_original', '-ignoreMinorErrors', '-m']
 
+            # DEBUG: Log what fields we're trying to update
+            logger.info(f"Updating fields in {os.path.basename(file_path)}:")
             for field, value in fields.items():
                 if hasattr(value, 'strftime'):
                     formatted_value = value.strftime("%Y:%m:%d %H:%M:%S")
                     cmd.append(f'-{field}={formatted_value}')
+                    logger.info(f"  {field} = {formatted_value}")
 
             cmd.extend(['-@', arg_file_path])
 
+            # DEBUG: Log the full command (minus file paths for brevity)
+            cmd_str = ' '.join([c for c in cmd if not c.startswith('/')])
+            logger.debug(f"ExifTool command: {cmd_str}")
+
             output = self.execute_command(cmd)
-            success = "1 image files updated" in output or "1 files updated" in output
 
-            if not success:
-                logger.warning(f"Unexpected update output for {file_path}: {output}")
+            # DEBUG: Log ExifTool output
+            logger.debug(f"ExifTool output for {os.path.basename(file_path)}: {output}")
 
-            return success
+            if "1 image files updated" in output or "1 files updated" in output:
+                logger.info(f"✅ Successfully updated {os.path.basename(file_path)}")
+                return True
+            elif "0 image files updated" in output:
+                logger.warning(f"❌ Failed to update {os.path.basename(file_path)}: {output}")
+                return False
+            else:
+                logger.warning(f"⚠️ Unexpected update output for {os.path.basename(file_path)}: {output}")
+                return False
 
         except Exception as e:
-            logger.error(f"Error updating datetime fields: {str(e)}")
+            logger.error(f"Error updating datetime fields for {os.path.basename(file_path)}: {str(e)}")
             return False
         finally:
             if os.path.exists(arg_file_path):
-                os.remove(arg_file_path)
+                try:
+                    os.remove(arg_file_path)
+                except:
+                    pass
 
     def restart(self):
         """Restart the ExifTool process"""

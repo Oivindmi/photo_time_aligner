@@ -311,6 +311,12 @@ class MainWindow(QMainWindow):
         self.apply_button.setStyleSheet("font-size: 16px; padding: 10px;")
         button_layout.addWidget(self.apply_button)
 
+        # Add the clear button right after apply_button:
+        self.clear_button = QPushButton("Clear Files")
+        self.clear_button.clicked.connect(self.clear_loaded_files)
+        self.clear_button.setStyleSheet("font-size: 16px; padding: 10px;")
+        button_layout.addWidget(self.clear_button)
+
         # Investigate metadata button
         self.investigate_button = QPushButton("Investigate Metadata")
         self.investigate_button.clicked.connect(self.investigate_metadata)
@@ -1268,6 +1274,69 @@ class MainWindow(QMainWindow):
         single_mode = self.config_manager.get('single_file_mode', False)
         self.single_file_mode_check.setChecked(single_mode)
 
+    def clear_loaded_files(self):
+        """Clear both reference and target files and reset the UI"""
+        logger.info("Clearing loaded files")
+
+        # Stop any running file scanning threads
+        self.stop_file_scanning()
+
+        # Clear file references
+        self.reference_file = None
+        self.target_file = None
+        self.reference_metadata = {}
+        self.target_metadata = {}
+        self.time_offset = None
+
+        # Clear file lists
+        self.clear_file_lists()
+
+        # Reset drop zones
+        self.reference_drop.setText("Drop Reference Photo/Video")
+        self.reference_drop.file_path = None
+        self.target_drop.setText("Drop Photo/Video to Align")
+        self.target_drop.file_path = None
+
+        # Reset info labels
+        self.reference_info.setText("No media loaded")
+        self.target_info.setText("No media loaded")
+
+        # Clear time field radio buttons
+        self.clear_time_field_radios()
+
+        # Reset pattern labels
+        self.ref_pattern_label.setText("Pattern: Not detected")
+        self.target_pattern_label.setText("Pattern: Not detected")
+
+        # Reset offset display
+        self.offset_label.setText("Time Offset: Not calculated")
+
+        # Update apply button state
+        self.update_apply_button_state()
+
+        # Update investigate button state
+        self.update_investigate_button_state()
+
+        # Update status
+        self.statusBar().showMessage("Files cleared - Ready to load new files")
+
+        logger.info("Files cleared successfully")
+
+    def clear_time_field_radios(self):
+        """Clear time field radio buttons for both reference and target"""
+        # Clear reference time radios
+        for radio in self.ref_time_radios.values():
+            container = radio.parent()
+            self.ref_time_container.removeWidget(container)
+            container.deleteLater()
+        self.ref_time_radios.clear()
+
+        # Clear target time radios
+        for radio in self.target_time_radios.values():
+            container = radio.parent()
+            self.target_time_container.removeWidget(container)
+            container.deleteLater()
+        self.target_time_radios.clear()
     def closeEvent(self, event):
         """Save configuration on close"""
         # Terminate any running threads

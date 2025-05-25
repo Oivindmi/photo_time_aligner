@@ -8,11 +8,11 @@ from src.utils import ExifToolNotFoundError
 
 # Set up logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Change from INFO to DEBUG to see detailed logging and debug information
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('photo_time_aligner.log')
+        logging.FileHandler('photo_time_aligner.log', encoding='utf-8')  # Add encoding
     ]
 )
 logger = logging.getLogger(__name__)

@@ -314,7 +314,7 @@ class FileProcessor:
 
     def _process_single_file(self, file_path: str, metadata: dict,
                              selected_field: str, offset_seconds: float) -> bool:
-        """Process a single file"""
+        """Process a single file with mandatory timestamp field enforcement"""
         try:
             # Parse datetime fields from metadata
             datetime_fields = {}
@@ -324,29 +324,56 @@ class FileProcessor:
                     if parsed_date:
                         datetime_fields[key] = parsed_date
 
+            # DEBUG: Log what datetime fields were found
+            logger.debug(f"Found datetime fields in {os.path.basename(file_path)}: {list(datetime_fields.keys())}")
+
             # Check if selected field exists
             if selected_field not in datetime_fields or datetime_fields[selected_field] is None:
                 logger.warning(f"Selected field {selected_field} not found in {os.path.basename(file_path)}")
                 return False
 
-            # Apply offset
+            # Apply offset to selected field
             original_timestamp = datetime_fields[selected_field]
             if offset_seconds != 0:
                 adjusted_timestamp = original_timestamp + timedelta(seconds=offset_seconds)
             else:
                 adjusted_timestamp = original_timestamp
 
-            # Update all populated fields
+            # Update all existing populated fields (current behavior)
             fields_to_update = {}
             for field_name, value in datetime_fields.items():
                 if value is not None:
                     fields_to_update[field_name] = adjusted_timestamp
 
+            # NEW: Ensure mandatory fields exist (Option A - use adjusted selected field value)
+            # Includes both EXIF metadata fields and filesystem date fields
+            mandatory_fields = [
+                'DateTimeOriginal', 'CreateDate', 'ModifyDate',  # EXIF metadata fields
+                'FileCreateDate', 'FileModifyDate'  # Filesystem date fields
+            ]
+
+            mandatory_added = []
+            for mandatory_field in mandatory_fields:
+                if mandatory_field not in fields_to_update:
+                    fields_to_update[mandatory_field] = adjusted_timestamp
+                    mandatory_added.append(mandatory_field)
+                    logger.debug(f"Adding missing mandatory field {mandatory_field} to {os.path.basename(file_path)}")
+
+            # DEBUG: Log what fields will be updated
+            logger.info(f"Will update fields in {os.path.basename(file_path)}: {list(fields_to_update.keys())}")
+            logger.info(f"Mandatory fields added: {mandatory_added}")
+            logger.info(f"Target timestamp: {adjusted_timestamp.strftime('%Y:%m:%d %H:%M:%S')}")
+
             # Apply updates
             success = self.exif_handler.update_all_datetime_fields(file_path, fields_to_update)
 
             if success:
-                logger.debug(f"Updated {len(fields_to_update)} fields in {os.path.basename(file_path)}")
+                if mandatory_added:
+                    logger.info(
+                        f"✅ Updated {len(fields_to_update)} fields ({len(mandatory_added)} mandatory fields added) in {os.path.basename(file_path)}")
+                    logger.info(f"Added mandatory fields: {mandatory_added}")
+                else:
+                    logger.debug(f"Updated {len(fields_to_update)} fields in {os.path.basename(file_path)}")
             else:
                 logger.warning(f"Failed to update fields in {os.path.basename(file_path)}")
 
