@@ -107,22 +107,75 @@ class FileRepairer:
         )
 
     def _create_backup(self, file_path: str, backup_dir: str) -> Optional[str]:
-        """Create backup of file before repair"""
+        """Create backup of file before repair with Windows path handling"""
+        import tempfile  # Import at the top to avoid scoping issues
+
         try:
+            # Normalize the path separators
+            file_path = os.path.normpath(file_path)
+            backup_dir = os.path.normpath(backup_dir)
+
+            # Ensure backup directory exists
             os.makedirs(backup_dir, exist_ok=True)
 
             filename = os.path.basename(file_path)
             name, ext = os.path.splitext(filename)
-            backup_path = os.path.join(backup_dir, f"{name}_backup{ext}")
 
+            # Truncate name if too long (Windows has 255 char limit for filename)
+            max_name_length = 200  # Leave room for _backup and extension
+            if len(name) > max_name_length:
+                name = name[:max_name_length]
+                logger.debug(f"Truncated long filename: {filename} -> {name}{ext}")
+
+            backup_filename = f"{name}_backup{ext}"
+            backup_path = os.path.join(backup_dir, backup_filename)
+
+            # Check if backup path is too long (Windows MAX_PATH is typically 260)
+            if len(backup_path) > 250:  # Leave some margin
+                # Create shorter backup filename
+                short_name = name[:50]  # Very short name
+                backup_filename = f"{short_name}_backup{ext}"
+                backup_path = os.path.join(backup_dir, backup_filename)
+                logger.debug(f"Using shortened backup path: {backup_path}")
+
+            # Handle file already exists case
+            counter = 1
+            original_backup_path = backup_path
+            while os.path.exists(backup_path):
+                name_part, ext_part = os.path.splitext(original_backup_path)
+                backup_path = f"{name_part}_{counter}{ext_part}"
+                counter += 1
+                if counter > 100:  # Prevent infinite loop
+                    raise Exception("Too many backup files exist")
+
+            # Use shutil.copy2 which handles Unicode and metadata better
             shutil.copy2(file_path, backup_path)
-            logger.debug(f"Created backup: {backup_path}")
+            logger.debug(f"Created backup: {os.path.basename(backup_path)}")
 
             return backup_path
 
         except Exception as e:
-            logger.error(f"Failed to create backup for {file_path}: {e}")
-            return None
+            logger.error(f"Failed to create backup for {os.path.basename(file_path)}: {e}")
+
+            # Try alternative backup location if original fails
+            try:
+                temp_backup_dir = tempfile.mkdtemp(prefix="photo_repair_backup_")
+
+                filename = os.path.basename(file_path)
+                name, ext = os.path.splitext(filename)
+
+                # Use simple name for temp backup
+                backup_filename = f"backup_{hash(file_path) % 10000}{ext}"
+                backup_path = os.path.join(temp_backup_dir, backup_filename)
+
+                shutil.copy2(file_path, backup_path)
+                logger.warning(f"Created backup in temp directory: {temp_backup_dir}")
+
+                return backup_path
+
+            except Exception as e2:
+                logger.error(f"Failed to create temp backup: {e2}")
+                return None
 
     def _apply_single_step_repair(self, file_path: str, strategy: RepairStrategy) -> Tuple[bool, str]:
         """Apply repair strategy using single, robust command"""
@@ -227,8 +280,24 @@ class FileRepairer:
             return False, str(e)
 
     def _verify_repair(self, file_path: str) -> bool:
-        """Verify repair by testing datetime update"""
-        backup_path = file_path + ".verify_backup"
+        """Verify repair by testing datetime update with path handling"""
+        import tempfile  # Import at the top to avoid scoping issues
+
+        # Create backup path with better handling
+        try:
+            # Use a simpler backup name to avoid path issues
+            backup_dir = os.path.dirname(file_path)
+            backup_filename = f"verify_temp_{hash(file_path) % 10000}.bak"
+            backup_path = os.path.join(backup_dir, backup_filename)
+
+            # If backup path is still too long, use temp directory
+            if len(backup_path) > 250:
+                temp_dir = tempfile.gettempdir()
+                backup_path = os.path.join(temp_dir, backup_filename)
+
+        except Exception:
+            # Fallback to simple temp file
+            backup_path = tempfile.mktemp(suffix=".bak", prefix="verify_")
 
         try:
             # Create backup for verification test
@@ -270,3 +339,9 @@ class FileRepairer:
                     shutil.move(backup_path, file_path)
                 except Exception as e:
                     logger.error(f"Failed to restore after verification: {e}")
+                    # Try copying instead of moving
+                    try:
+                        shutil.copy2(backup_path, file_path)
+                        os.remove(backup_path)
+                    except Exception as e2:
+                        logger.error(f"Failed to copy restore: {e2}")
