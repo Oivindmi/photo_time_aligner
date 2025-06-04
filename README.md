@@ -1,54 +1,62 @@
 # Photo & Video Time Aligner
 
-A Windows application for synchronizing timestamps across photos and videos from different cameras, with manual time adjustment capabilities, comprehensive metadata investigation tools, single file investigation mode, and **automatic corruption detection and repair**.
+A Windows application for synchronizing timestamps across photos and videos from different cameras, with manual time adjustment capabilities, comprehensive metadata investigation tools, single file investigation mode, and **advanced corruption detection and repair with user-controlled strategy selection**.
 
 ## Features
 - **Dual Operation Modes**: Full processing mode and single file investigation mode
+- **Optional Corruption Detection**: Toggle corruption scanning for faster processing when not needed
+- **Advanced Repair System**: User-selectable repair strategies with automatic backups
 - Drag and drop interface for photo and video comparison
 - Automatic detection of media from the same camera/device
 - Batch time adjustment for all matching media files
 - **Manual time offset** - adjust photos without needing a target photo
 - **Single File Mode** - investigate individual files without processing groups
 - **Comprehensive metadata investigation** - explore all EXIF data in your files
-- **NEW: Automatic Corruption Detection** - identifies and repairs corrupted EXIF data
-- **NEW: Intelligent Repair System** - multiple repair strategies with caching
-- **NEW: Mandatory Timestamp Fields** - ensures all processed files get proper datetime metadata
+- **NEW: User-Controlled Repair Strategies** - Choose between automatic progression or force specific repair methods
+- **NEW: Enhanced Backup Management** - Easy access to backup files with click-to-copy paths
+- **NEW: Performance Optimization** - Optional corruption detection for faster processing
 - Support for 50+ photo and video formats
 - Optional master folder organization with camera-specific subfolders
 
-## NEW: Corruption Detection & Repair System
+## NEW: Enhanced Corruption Detection & Repair System
 
-### **Automatic Corruption Detection**
-The application now automatically scans files for corruption before processing and can repair most types of EXIF corruption:
+### **Optional Corruption Detection**
+The application now includes a toggle for corruption detection, allowing users to choose between:
 
-- **EXIF Structure Errors** (e.g., "Error reading StripOffsets data in IFD0")
-- **MakerNotes Issues** (e.g., "MakerNotes offsets may be incorrect")
-- **Missing EXIF Metadata** (files with only filesystem dates)
-- **Severe Corruption** (various structural problems)
+- **Enabled (Default)**: Full corruption scanning and repair capabilities
+- **Disabled**: Skip corruption analysis for faster processing of known-good files
 
-### **Intelligent Repair System**
-When corruption is detected, the application offers to repair files using multiple strategies:
+### **User-Controlled Repair Strategies**
+When corruption is detected, users can choose their repair approach:
 
-1. **Safest Repair**: Minimal changes to preserve existing metadata
-2. **Thorough Repair**: Rebuild metadata structure with force flags
-3. **Aggressive Repair**: Complete metadata rebuild with minimal EXIF structure
-4. **Filesystem-Only Fallback**: Updates filesystem dates when EXIF repair fails
+#### **Automatic Mode (Recommended)**
+- Tries repair strategies in order: Safest → Thorough → Aggressive → Filesystem-only
+- Automatically progresses until a strategy works
+- Best balance of safety and success rate
 
-### **Smart Caching**
-The system learns which repair strategies work best for different corruption types and tries the most successful approach first in future repairs.
+#### **Force Specific Strategy**
+- **Force Safest**: Minimal changes, preserve existing metadata (~90% success rate)
+- **Force Thorough**: Rebuild metadata structure with force flags (~70% success rate)
+- **Force Aggressive**: Complete metadata rebuild with minimal EXIF structure (~50% success rate)
+- **Force Filesystem-Only**: Update filesystem dates only, skip EXIF repair (~30% success rate)
 
-### **Automatic Backups**
-Before any repair attempt, the application automatically creates backups in a `backup` folder, ensuring your original files are always safe.
+### **Enhanced Corruption Analysis**
+- **Detailed Classification**: Files grouped by corruption type (EXIF Structure, MakerNotes, etc.)
+- **Success Rate Estimates**: Shows expected repair success rates for each corruption type
+- **Clean Error Messages**: User-friendly error descriptions without technical file paths
+- **Repairability Assessment**: Clear indication of which files can be repaired
+
+### **Advanced Backup Management**
+- **Automatic Backups**: Created before any repair attempt with proper file extensions
+- **Interactive Backup Browser**: Click any backup path to copy to clipboard
+- **Color-Coded Results**: Green for successful repairs, yellow for failed attempts
+- **Backup Path Export**: Copy all backup paths at once for external management
+- **Detailed Backup Information**: Shows original file, backup location, repair strategy used
+
+### **Smart Caching and Learning**
+The system learns which repair strategies work best for different corruption types and optimizes future repairs accordingly.
 
 ## Operation Modes
-
-### Full Processing Mode (Default)
-- Two-photo alignment workflow for synchronizing different cameras
-- Single-photo manual adjustment workflow for timezone corrections
-- **NEW: Corruption detection and repair** before processing
-- Batch processing of matching files
-- Master folder organization
-- Uses 4 parallel ExifTool processes for optimal performance
 
 ### Single File Mode (Investigation Only)
 - **Purpose**: Quick investigation of individual file metadata without processing
@@ -56,6 +64,15 @@ Before any repair attempt, the application automatically creates backups in a `b
 - **UI Simplified**: Processing controls disabled, focus on investigation
 - **Perfect For**: Examining time fields, camera settings, and metadata before processing
 - **Toggle**: Checkbox at top of interface for easy switching
+
+### Full Processing Mode (Default)
+- Two-photo alignment workflow for synchronizing different cameras
+- Single-photo manual adjustment workflow for timezone corrections
+- **Optional Corruption Detection**: Toggle for performance optimization
+- **User-Controlled Repair**: Choose repair strategy when corruption is found
+- Batch processing of matching files
+- Master folder organization
+- Uses 4 parallel ExifTool processes for optimal performance
 
 ## Enhanced Processing Features
 
@@ -67,15 +84,27 @@ All processed files now receive these essential timestamp fields:
 - **FileCreateDate** - Windows filesystem creation date
 - **FileModifyDate** - Windows filesystem modification date
 
-This ensures every processed file has proper timestamps in both EXIF metadata AND Windows filesystem, making them compatible with all photo management software.
+### **Advanced Corruption Repair Workflow**
+1. **Optional Detection**: Choose whether to scan for corruption (toggle at top of interface)
+2. **Detailed Analysis**: View corruption details grouped by type with success rates
+3. **Strategy Selection**: Choose automatic progression or force specific repair method
+4. **Automatic Backups**: Files backed up with accessible paths before any changes
+5. **Real-time Progress**: See repair progress with strategy information
+6. **Interactive Results**: Browse backup files with click-to-copy functionality
+7. **Comprehensive Reporting**: Detailed logs with backup locations and repair outcomes
 
-### **Corruption Repair Workflow**
-1. **Automatic Detection**: Files are scanned for corruption before processing
-2. **User Choice**: If corruption is found, user can choose to attempt repairs
-3. **Multiple Strategies**: System tries different repair approaches automatically
-4. **Verification**: Each repair is tested to ensure it actually worked
-5. **Graceful Fallback**: Failed repairs fall back to filesystem-only updates
-6. **Progress Feedback**: Real-time progress and detailed final reports
+## Performance Optimization
+
+### **Optional Corruption Detection**
+- **Toggle Control**: Checkbox next to Single File Mode for easy access
+- **Default**: Enabled for maximum data safety
+- **When to Disable**: For known-good files or when speed is priority
+- **Performance Impact**: Can reduce processing time significantly for large batches
+
+### **Adaptive Resource Management**
+- **Single File Mode**: 1 ExifTool process for minimal resource usage
+- **Full Processing Mode**: 4 ExifTool processes for maximum throughput
+- **Optional Corruption Scan**: Skip resource-intensive corruption analysis when not needed
 
 ## Supported Media Formats
 
@@ -119,56 +148,55 @@ pip install -r requirements.txt
 
 ### Single File Mode (Investigation Only) - Enhanced
 1. **Enable Single File Mode**: Check "Single File Mode (Investigation Only)" at the top
-2. **Drop File**: Drag and drop any photo/video into the reference zone
-3. **Examine Time Fields**: View all available time/date fields with raw and parsed values
-4. **Investigate Metadata**: Click "Investigate Metadata" for comprehensive metadata exploration
-5. **Resource Efficient**: Uses only one ExifTool process for optimal performance
-6. **Quick Toggle**: Uncheck to return to full processing mode
+2. **Optional**: Disable "Enable Corruption Detection & Repair" for faster investigation
+3. **Drop File**: Drag and drop any photo/video into the reference zone
+4. **Examine Time Fields**: View all available time/date fields with raw and parsed values
+5. **Investigate Metadata**: Click "Investigate Metadata" for comprehensive metadata exploration
+6. **Resource Efficient**: Uses only one ExifTool process for optimal performance
 
 ### Full Processing Mode Workflows
 
 #### Option A: Two-Photo Alignment (Standard)
 1. **Disable Single File Mode** (if enabled)
-2. Launch the application and load reference photo
-3. Load target photo to align
-4. **NEW**: If corruption is detected, choose whether to attempt repairs
-5. Configure matching rules and select time fields
-6. Review calculated offset and apply alignment
+2. **Choose Corruption Detection**: Enable for unknown files, disable for speed
+3. Launch the application and load reference photo
+4. Load target photo to align
+5. **NEW**: If corruption is detected (and enabled), choose repair strategy
+6. Configure matching rules and select time fields
+7. Review calculated offset and apply alignment
 
 #### Option B: Single-Photo Manual Adjustment
 1. **Disable Single File Mode** (if enabled)
-2. Load reference photo (no target needed)
-3. **NEW**: If corruption is detected, choose whether to attempt repairs
-4. Set manual time offset using input fields
-5. Configure matching rules and apply alignment
+2. **Choose Corruption Detection**: Enable for safety, disable for speed
+3. Load reference photo (no target needed)
+4. **NEW**: If corruption is detected (and enabled), choose repair strategy
+5. Set manual time offset using input fields
+6. Configure matching rules and apply alignment
 
-### NEW: Corruption Repair Process
+### NEW: Corruption Detection and Repair Process
 
-When corruption is detected, you'll see:
+#### When Corruption Detection is Enabled:
 ```
 Corruption Analysis Complete:
 • 42 files are healthy
 • 3 files have repairable corruption
-  - 2 files: EXIF structure errors (~70% repair success rate)
-  - 1 file: MakerNotes issues (~90% repair success rate)
+  - 2 files: EXIF Structure (~70% repair success rate)
+  - 1 file: MakerNotes Issues (~90% repair success rate)
 • 2 files have severe corruption
 
-⏱️ Estimated repair time: 1-2 minutes
+Choose repair approach:
+○ Automatic (Recommended) - Try strategies in order
+○ Force Safest - Minimal changes (~90% success)
+○ Force Thorough - Rebuild structure (~70% success)
+○ Force Aggressive - Complete rebuild (~50% success)
+○ Force Filesystem-Only - Skip EXIF repair (~30% success)
 
-[Attempt Repair] [Skip Repair]
+⏱️ Time: 1-2 minutes    📁 Backups will be created automatically
+
+[Skip Repair] [Attempt Repair]
 ```
 
-**Repair Process:**
-1. **Automatic Backups**: Created in `backup` folder before any changes
-2. **Multiple Strategies**: System tries safest → thorough → aggressive approaches
-3. **Real-time Progress**: See which files are being repaired and results
-4. **Verification**: Each repair is tested to ensure it actually works
-5. **Fallback**: Failed repairs still get filesystem date updates
-6. **Caching**: Successful strategies are remembered for future similar files
-
-### Enhanced Results
-
-After processing, you'll see comprehensive reports including:
+#### Enhanced Results with Backup Management:
 ```
 === Enhanced Photo Time Alignment Report ===
 
@@ -179,24 +207,37 @@ File Repair Operations:
 
 Repair Details:
 ✓ IMG001.jpg: Repaired using thorough
+  📁 Backup: C:\backup\IMG001_backup.jpg
 ✓ IMG002.jpg: Repaired using safest
+  📁 Backup: C:\backup\IMG002_backup.jpg
 ✗ IMG003.jpg: All repair strategies failed
+  📁 Backup preserved: C:\backup\IMG003_backup.jpg
+
+Interactive Backup Browser:
+• Click any backup path to copy to clipboard
+• Color-coded entries (green=success, yellow=failed)
+• "Copy All Paths" button for batch operations
 
 Metadata Updates:
 ✓ Successfully updated: 47 files
 ✓ Mandatory fields added: 23 files
 
-📁 Backups saved to: /path/to/backup/folder
+📁 Backups saved to accessible locations with full path information
 ```
 
 ## Advanced Features
 
-### Metadata Investigation (Available in Both Modes)
-- **Enhanced Search**: Filter by field name or value
-- **Comprehensive Data**: Shows all metadata ExifTool can extract
+### Enhanced Metadata Investigation (Available in Both Modes)
+- **Comprehensive Search**: Filter by field name or value
+- **Corruption-Aware**: Shows metadata quality and potential issues
 - **Time Field Highlighting**: Date/time fields displayed in bold
 - **Copy Functions**: Right-click to copy field names, values, or both
 - **Works with all formats**: Photos and videos
+
+### Performance Controls
+- **Corruption Detection Toggle**: Enable/disable corruption scanning
+- **Single File Mode**: Resource-efficient investigation
+- **Adaptive Processing**: Automatic resource allocation based on mode
 
 ### Group Selection Rules
 - **Camera Model**: Match files from same camera make/model
@@ -208,66 +249,43 @@ Metadata Updates:
 - **Root Folder**: All files in master folder root
 - **Camera Subfolders**: Organized by camera (e.g., Canon_EOS_R5, Apple_iPhone_14_Pro)
 
-### Performance Optimizations
-- **Adaptive Process Management**: 1 process for Single File Mode, 4 for Full Processing
-- **Process Pool Architecture**: Concurrent operations for maximum throughput
-- **Group-Based Processing**: Files processed in optimized batches
-- **Async File Operations**: Non-blocking directory scanning
-
-## Architecture & Design
-
-### Core Components
-- **Corruption Detection**: Automatic identification of EXIF issues
-- **Repair Strategies**: Multiple approaches for different corruption types
-- **Mandatory Fields**: Ensures consistent timestamp structure
-- **Process Pool**: Concurrent ExifTool operations
-- **Intelligent Caching**: Performance optimization and learning
-
-### Technical Features
-- **Unicode Support**: Handles international characters in file paths
-- **Error Recovery**: Automatic fallback strategies
-- **Resource Management**: Adaptive based on operation mode
-- **Comprehensive Logging**: Detailed operation tracking
-- **Backup System**: Automatic file protection
-
-## Troubleshooting
-
-### Corruption-Related Issues
-- **Backup Files**: Created in `backup` folder with original extensions
-- **Log Files**: Detailed repair logs saved automatically
-- **Strategy Selection**: System learns optimal approaches over time
-
-### Performance
-- **Large Collections**: Tested with 3000+ files
-- **Memory Management**: Optimized resource usage
-- **Process Optimization**: Automatic pool sizing
-
 ## Use Cases
 
 ### Professional Photography
-- **Multi-camera Events**: Sync all cameras to primary photographer
-- **Corruption Recovery**: Repair damaged EXIF from various sources
+- **Multi-camera Events**: Sync all cameras with user-controlled repair strategies
+- **Corruption Recovery**: Advanced repair with backup management
 - **Batch Organization**: Master folder with camera-specific subfolders
+- **Performance Optimization**: Toggle corruption detection based on file source
 
 ### Personal Photo Management
 - **Timezone Corrections**: Manual offset for travel photos
-- **Legacy Photo Repair**: Fix corruption from old software/scanners
+- **Legacy Photo Repair**: Fix corruption from old software/scanners with strategy selection
 - **Metadata Investigation**: Understand photo origins and settings
+- **Fast Processing**: Disable corruption detection for known-good files
 
 ### Digital Asset Management
 - **Metadata Standardization**: Ensure consistent timestamp fields
-- **Quality Control**: Identify and repair corrupted files
-- **Batch Processing**: Handle large collections efficiently
+- **Quality Control**: User-controlled corruption detection and repair
+- **Backup Management**: Easy access to backup files with click-to-copy paths
+- **Batch Processing**: Handle large collections efficiently with performance controls
 
 ## Version History
 
-### Version 2.0.0 (Current)
+### Version 3.0.0 (Current)
+- ✅ **NEW**: Optional corruption detection toggle for performance optimization
+- ✅ **NEW**: User-selectable repair strategies (Automatic, Force Safest, Force Thorough, etc.)
+- ✅ **NEW**: Enhanced backup management with click-to-copy paths
+- ✅ **NEW**: Interactive results browser with color-coded backup files
+- ✅ **NEW**: Detailed corruption analysis with success rate estimates
+- ✅ **NEW**: Clean error message display without technical file paths
+- ✅ **IMPROVED**: Advanced Windows path handling for Norwegian characters and long paths
+- ✅ **IMPROVED**: Performance controls for different use cases
+
+### Version 2.0.0 (Previous)
 - ✅ **NEW**: Automatic corruption detection and repair system
 - ✅ **NEW**: Mandatory timestamp fields for all processed files
 - ✅ **NEW**: Automatic backup system
-- ✅ **NEW**: Enhanced progress reporting and error handling
 - ✅ **IMPROVED**: Unicode path handling for international characters
-- ✅ **IMPROVED**: Filesystem date updates (FileCreateDate, FileModifyDate)
 
 ### Version 1.0.0
 - Initial release with dual-mode operation

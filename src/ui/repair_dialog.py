@@ -1,213 +1,371 @@
-# - Dialog for user repair decision
+# src/ui/repair_dialog.py - Complete repair dialog with strategy selection
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QPushButton, QTextEdit, QGroupBox, QProgressBar)
+                             QPushButton, QTextEdit, QButtonGroup, QRadioButton,
+                             QGroupBox, QScrollArea, QWidget, QLineEdit, QApplication)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 import logging
+import os
+from typing import Dict
+from ..core.repair_strategies import RepairStrategy
 
 logger = logging.getLogger(__name__)
 
 
 class RepairDecisionDialog(QDialog):
-    """Dialog to get user decision on file repair"""
+    """Dialog for user to decide on repair approach with strategy selection"""
 
-    def __init__(self, corruption_summary, corruption_results, parent=None):
+    def __init__(self, corruption_summary: Dict, corruption_results: Dict, parent=None):
         super().__init__(parent)
         self.corruption_summary = corruption_summary
         self.corruption_results = corruption_results
         self.repair_choice = False
+        self.selected_strategy = RepairStrategy.SAFEST  # Default to automatic (safest first)
+        self.force_strategy = False  # Whether to force a specific strategy
 
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("Corrupted Files Detected")
         self.setModal(True)
-        self.resize(600, 400)
+        self.setMinimumSize(800, 700)  # Made wider and taller
 
         layout = QVBoxLayout()
 
         # Title
-        title = QLabel("File Corruption Analysis Complete")
-        title_font = QFont()
-        title_font.setPointSize(14)
-        title_font.setBold(True)
-        title.setFont(title_font)
+        title = QLabel("File Corruption Analysis")
+        title.setFont(QFont("Arial", 14, QFont.Bold))
         layout.addWidget(title)
 
         # Summary section
-        summary_group = QGroupBox("Summary")
-        summary_layout = QVBoxLayout()
+        summary_text = self._generate_summary_text()
+        summary_label = QLabel(summary_text)
+        summary_label.setStyleSheet("padding: 10px; background-color: #f0f0f0; border-radius: 5px;")
+        summary_label.setWordWrap(True)
+        layout.addWidget(summary_label)
 
-        total_files = self.corruption_summary['total_files']
-        healthy_files = self.corruption_summary['healthy_files']
-        repairable_files = self.corruption_summary['repairable_files']
-        unrepairable_files = self.corruption_summary['unrepairable_files']
+        # Detailed corruption info - Made larger and more prominent
+        details_group = QGroupBox("Corruption Details")
+        details_layout = QVBoxLayout()
 
-        summary_layout.addWidget(QLabel(f"• {total_files} total files to process"))
-        summary_layout.addWidget(QLabel(f"• {healthy_files} files are healthy"))
+        details_text = QTextEdit()
+        details_text.setReadOnly(True)
+        details_text.setMinimumHeight(250)  # Increased from 200
+        details_text.setMaximumHeight(350)  # Set max height
+        details_text.setPlainText(self._generate_details_text())
+        details_text.setFontFamily("Consolas")  # Use monospace font for better formatting
+        details_text.setStyleSheet("QTextEdit { background-color: #f8f8f8; }")
+        details_layout.addWidget(details_text)
 
-        if repairable_files > 0:
-            repair_label = QLabel(f"• {repairable_files} files have repairable corruption")
-            repair_label.setStyleSheet("color: orange; font-weight: bold;")
-            summary_layout.addWidget(repair_label)
+        details_group.setLayout(details_layout)
+        layout.addWidget(details_group)
 
-        if unrepairable_files > 0:
-            unrepairable_label = QLabel(f"• {unrepairable_files} files have severe corruption")
-            unrepairable_label.setStyleSheet("color: red; font-weight: bold;")
-            summary_layout.addWidget(unrepairable_label)
+        # Repair strategy selection - Made more compact
+        strategy_group = QGroupBox("Repair Strategy Selection")
+        strategy_layout = QVBoxLayout()
 
-        summary_group.setLayout(summary_layout)
-        layout.addWidget(summary_group)
+        # Explanation
+        strategy_info = QLabel(
+            "Choose repair approach:\n"
+            "• Automatic: Try strategies in order until one works (recommended)\n"
+            "• Force Specific: Use only the selected strategy"
+        )
+        strategy_info.setStyleSheet("color: #666; font-style: italic; margin-bottom: 5px;")
+        strategy_info.setWordWrap(True)
+        strategy_layout.addWidget(strategy_info)
 
-        # Corruption types section
-        if self.corruption_summary['corruption_types']:
-            types_group = QGroupBox("Corruption Types Detected")
-            types_layout = QVBoxLayout()
+        # Radio buttons for strategy selection in a more compact layout
+        self.strategy_button_group = QButtonGroup()
 
-            for corruption_type, count in self.corruption_summary['corruption_types'].items():
-                if corruption_type != 'healthy':
-                    success_rate = self._get_estimated_success_rate(corruption_type)
-                    type_label = QLabel(f"• {count} files: {self._format_corruption_type(corruption_type)} "
-                                        f"(~{success_rate:.0%} repair success rate)")
-                    types_layout.addWidget(type_label)
+        # Automatic mode (default)
+        self.auto_radio = QRadioButton("Automatic (Recommended)")
+        self.auto_radio.setChecked(True)
+        self.auto_radio.setToolTip("Try strategies in order until one works")
+        self.strategy_button_group.addButton(self.auto_radio)
+        strategy_layout.addWidget(self.auto_radio)
 
-            types_group.setLayout(types_layout)
-            layout.addWidget(types_group)
+        # Create horizontal layout for force options
+        force_layout = QHBoxLayout()
 
-        # Options section
-        options_group = QGroupBox("Repair Options")
-        options_layout = QVBoxLayout()
+        self.safest_radio = QRadioButton("Force Safest")
+        self.safest_radio.setToolTip("Minimal changes (~90% success)")
+        self.strategy_button_group.addButton(self.safest_radio)
+        force_layout.addWidget(self.safest_radio)
 
-        option1_text = ("✅ Attempt to repair corrupted files first, then process all files normally\n"
-                        "   • Best results if repair succeeds\n"
-                        "   • Backups will be created automatically\n"
-                        "   • Failed repairs will fall back to filesystem-only updates")
+        self.thorough_radio = QRadioButton("Force Thorough")
+        self.thorough_radio.setToolTip("Rebuild structure (~70% success)")
+        self.strategy_button_group.addButton(self.thorough_radio)
+        force_layout.addWidget(self.thorough_radio)
 
-        option2_text = ("⚠️ Process files as-is with hybrid approach\n"
-                        "   • Safe, guaranteed to work\n"
-                        "   • Corrupted files will only get filesystem date updates\n"
-                        "   • No internal EXIF metadata restoration for corrupted files")
+        self.aggressive_radio = QRadioButton("Force Aggressive")
+        self.aggressive_radio.setToolTip("Complete rebuild (~50% success)")
+        self.strategy_button_group.addButton(self.aggressive_radio)
+        force_layout.addWidget(self.aggressive_radio)
 
-        options_layout.addWidget(QLabel(option1_text))
-        options_layout.addWidget(QLabel(""))
-        options_layout.addWidget(QLabel(option2_text))
+        self.filesystem_radio = QRadioButton("Filesystem Only")
+        self.filesystem_radio.setToolTip("Skip EXIF repair (~30% success)")
+        self.strategy_button_group.addButton(self.filesystem_radio)
+        force_layout.addWidget(self.filesystem_radio)
 
-        options_group.setLayout(options_layout)
-        layout.addWidget(options_group)
+        force_layout.addStretch()
+        strategy_layout.addLayout(force_layout)
 
-        # Time estimate
-        if repairable_files > 0:
-            time_estimate = max(1, repairable_files // 3)  # Rough estimate: 3 files per minute
-            time_label = QLabel(f"⏱️ Estimated repair time: {time_estimate}-{time_estimate * 2} minutes")
-            time_label.setStyleSheet("color: #666; font-style: italic;")
-            layout.addWidget(time_label)
+        strategy_group.setLayout(strategy_layout)
+        layout.addWidget(strategy_group)
+
+        # Time estimate and backup info in horizontal layout
+        info_layout = QHBoxLayout()
+
+        # Estimated time
+        time_estimate = self._calculate_time_estimate()
+        time_label = QLabel(f"⏱️ Time: {time_estimate}")
+        time_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        info_layout.addWidget(time_label)
+
+        info_layout.addStretch()
+
+        # Backup information
+        backup_info = QLabel("📁 Backups will be created automatically")
+        backup_info.setStyleSheet("color: #0066cc;")
+        info_layout.addWidget(backup_info)
+
+        layout.addLayout(info_layout)
 
         # Buttons
         button_layout = QHBoxLayout()
-
-        self.repair_button = QPushButton("Attempt Repair")
-        self.repair_button.setStyleSheet("font-size: 14px; padding: 8px 16px; background-color: #4CAF50; color: white;")
-        self.repair_button.clicked.connect(self.accept_repair)
-
-        self.skip_button = QPushButton("Skip Repair")
-        self.skip_button.setStyleSheet("font-size: 14px; padding: 8px 16px;")
-        self.skip_button.clicked.connect(self.skip_repair)
-
         button_layout.addStretch()
-        button_layout.addWidget(self.skip_button)
-        button_layout.addWidget(self.repair_button)
+
+        skip_button = QPushButton("Skip Repair")
+        skip_button.setToolTip("Process files without repair")
+        skip_button.clicked.connect(self.skip_repair)
+        button_layout.addWidget(skip_button)
+
+        repair_button = QPushButton("Attempt Repair")
+        repair_button.setToolTip("Create backups and attempt repair")
+        repair_button.clicked.connect(self.attempt_repair)
+        repair_button.setDefault(True)
+        repair_button.setStyleSheet("font-weight: bold; padding: 8px 16px;")
+        button_layout.addWidget(repair_button)
 
         layout.addLayout(button_layout)
-
         self.setLayout(layout)
 
-    def _format_corruption_type(self, corruption_type: str) -> str:
-        """Format corruption type for display"""
-        type_names = {
-            'exif_structure': 'EXIF structure errors',
-            'makernotes': 'MakerNotes issues',
-            'severe_corruption': 'Severe corruption',
-            'filesystem_only': 'Missing EXIF metadata'
-        }
-        return type_names.get(corruption_type, corruption_type)
+    def _generate_summary_text(self) -> str:
+        """Generate summary text for the dialog"""
+        # Handle missing keys gracefully
+        total = self.corruption_summary.get('total_files', 0)
+        healthy = self.corruption_summary.get('healthy_files', 0)
+        repairable = self.corruption_summary.get('repairable_files', 0)
+        unrepairable = self.corruption_summary.get('unrepairable_files', 0)
 
-    def _get_estimated_success_rate(self, corruption_type: str) -> float:
+        # Calculate total if not provided
+        if total == 0:
+            total = healthy + repairable + unrepairable
+
+        text = f"Corruption Analysis Complete:\n"
+        text += f"• {healthy} files are healthy\n"
+
+        if repairable > 0:
+            text += f"• {repairable} files have repairable corruption\n"
+
+            # Break down by corruption type
+            corruption_types = self.corruption_summary.get('corruption_types', {})
+            for corruption_type, count in corruption_types.items():
+                if corruption_type != 'healthy' and count > 0:
+                    success_rate = self._get_success_rate_for_type(corruption_type)
+                    text += f"  - {count} files: {corruption_type.replace('_', ' ').title()} (~{success_rate}% repair success rate)\n"
+
+        if unrepairable > 0:
+            text += f"• {unrepairable} files have severe corruption\n"
+
+        return text
+
+    def _get_success_rate_for_type(self, corruption_type: str) -> int:
         """Get estimated success rate for corruption type"""
-        # Get average success rate for this corruption type
-        files_of_type = [
-            info for info in self.corruption_results.values()
-            if info.corruption_type.value == corruption_type
-        ]
+        rates = {
+            'makernotes': 90,
+            'exif_structure': 70,
+            'filesystem_only': 30,
+            'severe_corruption': 20
+        }
+        return rates.get(corruption_type, 50)
 
-        if files_of_type:
-            avg_success_rate = sum(info.estimated_success_rate for info in files_of_type) / len(files_of_type)
-            return avg_success_rate
+    def _generate_details_text(self) -> str:
+        """Generate detailed corruption information"""
+        details = []
 
-        return 0.5  # Default 50%
+        if not self.corruption_results:
+            details.append("No corruption details available.")
+            return "\n".join(details)
 
-    def accept_repair(self):
+        # Group files by corruption type for better organization
+        corruption_groups = {}
+
+        for file_path, corruption_info in self.corruption_results.items():
+            if corruption_info.corruption_type.value != 'healthy':
+                corruption_type = corruption_info.corruption_type.value
+                if corruption_type not in corruption_groups:
+                    corruption_groups[corruption_type] = []
+                corruption_groups[corruption_type].append((file_path, corruption_info))
+
+        if not corruption_groups:
+            details.append("All files are healthy - no corruption detected.")
+            return "\n".join(details)
+
+        # Display each corruption type group
+        for corruption_type, files_list in corruption_groups.items():
+            details.append(f"=== {corruption_type.replace('_', ' ').upper()} ({len(files_list)} files) ===")
+            details.append("")
+
+            for file_path, corruption_info in files_list:
+                filename = os.path.basename(file_path)
+                details.append(f"📁 File: {filename}")
+
+                # Show corruption type and repairability
+                details.append(f"   Type: {corruption_info.corruption_type.value}")
+                details.append(f"   Repairable: {'✅ Yes' if corruption_info.is_repairable else '❌ No'}")
+                details.append(f"   Success Rate: ~{int(corruption_info.estimated_success_rate * 100)}%")
+
+                # Show error message if available, but clean it up
+                if corruption_info.error_message:
+                    # Clean up the error message - remove file paths and make it readable
+                    error_msg = corruption_info.error_message
+
+                    # Remove long file paths from error messages
+                    if "C:/" in error_msg or "c:/" in error_msg:
+                        # Extract just the core error without the file path
+                        if " - " in error_msg:
+                            error_msg = error_msg.split(" - ")[0]
+
+                    # Limit error message length
+                    if len(error_msg) > 100:
+                        error_msg = error_msg[:100] + "..."
+
+                    details.append(f"   Error: {error_msg}")
+
+                details.append("")  # Empty line between files
+
+            details.append("")  # Empty line between corruption types
+
+        return "\n".join(details)
+
+    def _calculate_time_estimate(self) -> str:
+        """Calculate estimated repair time"""
+        repairable_count = self.corruption_summary['repairable_files']
+
+        if repairable_count == 0:
+            return "No repairs needed"
+        elif repairable_count <= 5:
+            return "30 seconds - 1 minute"
+        elif repairable_count <= 20:
+            return "1-3 minutes"
+        elif repairable_count <= 50:
+            return "3-8 minutes"
+        else:
+            return f"8-15 minutes ({repairable_count} files)"
+
+    def attempt_repair(self):
         """User chose to attempt repair"""
         self.repair_choice = True
+
+        # Determine selected strategy and mode
+        if self.auto_radio.isChecked():
+            self.force_strategy = False
+            self.selected_strategy = None  # Use automatic progression
+        elif self.safest_radio.isChecked():
+            self.force_strategy = True
+            self.selected_strategy = RepairStrategy.SAFEST
+        elif self.thorough_radio.isChecked():
+            self.force_strategy = True
+            self.selected_strategy = RepairStrategy.THOROUGH
+        elif self.aggressive_radio.isChecked():
+            self.force_strategy = True
+            self.selected_strategy = RepairStrategy.AGGRESSIVE
+        elif self.filesystem_radio.isChecked():
+            self.force_strategy = True
+            self.selected_strategy = RepairStrategy.FILESYSTEM_ONLY
+
+        logger.info(f"User selected repair with strategy: {self.selected_strategy}, force: {self.force_strategy}")
         self.accept()
 
     def skip_repair(self):
         """User chose to skip repair"""
         self.repair_choice = False
+        logger.info("User chose to skip repair")
         self.accept()
 
     def get_repair_choice(self) -> bool:
-        """Get the user's repair choice"""
+        """Get whether user wants to attempt repair"""
         return self.repair_choice
+
+    def get_strategy_choice(self) -> tuple:
+        """Get user's strategy choice as (force_strategy: bool, strategy: RepairStrategy)"""
+        return (self.force_strategy, self.selected_strategy)
 
 
 class RepairProgressDialog(QDialog):
-    """Dialog showing repair progress"""
+    """Dialog showing repair progress with real-time updates"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle("Repairing Corrupted Files")
+        self.setWindowTitle("Repairing Files")
         self.setModal(True)
-        self.resize(500, 200)
+        self.setMinimumSize(500, 300)
 
         layout = QVBoxLayout()
 
-        # Status label
-        self.status_label = QLabel("Preparing repair...")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("font-size: 14px; font-weight: bold; margin: 10px;")
-        layout.addWidget(self.status_label)
+        # Title
+        self.title_label = QLabel("Repairing Corrupted Files...")
+        self.title_label.setFont(QFont("Arial", 12, QFont.Bold))
+        layout.addWidget(self.title_label)
 
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimumHeight(25)
-        layout.addWidget(self.progress_bar)
+        # Progress info
+        self.progress_label = QLabel("Preparing repair operations...")
+        layout.addWidget(self.progress_label)
 
-        # Details text
-        self.details_text = QTextEdit()
-        self.details_text.setMaximumHeight(100)
-        self.details_text.setReadOnly(True)
-        layout.addWidget(self.details_text)
+        # Current file being processed
+        self.current_file_label = QLabel("")
+        self.current_file_label.setStyleSheet("color: #0066cc; font-weight: bold;")
+        layout.addWidget(self.current_file_label)
 
+        # Results area
+        self.results_text = QTextEdit()
+        self.results_text.setReadOnly(True)
+        self.results_text.setMaximumHeight(150)
+        layout.addWidget(self.results_text)
+
+        # Cancel button (initially)
+        self.button_layout = QHBoxLayout()
+        self.button_layout.addStretch()
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        self.button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(self.button_layout)
         self.setLayout(layout)
 
-    def update_progress(self, current: int, total: int, status: str):
-        """Update progress display"""
-        if total > 0:
-            self.progress_bar.setRange(0, total)
-            self.progress_bar.setValue(current)
-            percentage = int((current / total) * 100)
-            self.setWindowTitle(f"Repairing Corrupted Files ({percentage}%)")
+    def update_progress(self, current: int, total: int, current_file: str = "", status: str = ""):
+        """Update progress information"""
+        self.progress_label.setText(f"Progress: {current}/{total} files processed")
 
-        self.status_label.setText(status)
+        if current_file:
+            self.current_file_label.setText(f"Processing: {current_file}")
 
-    def add_detail(self, message: str):
-        """Add detail message to the log"""
-        self.details_text.append(message)
-        # Auto-scroll to bottom
-        cursor = self.details_text.textCursor()
-        cursor.movePosition(cursor.End)
-        self.details_text.setTextCursor(cursor)
+        if status:
+            self.results_text.append(status)
+            # Auto-scroll to bottom
+            cursor = self.results_text.textCursor()
+            cursor.movePosition(cursor.End)
+            self.results_text.setTextCursor(cursor)
+
+    def repair_completed(self):
+        """Called when repair is completed"""
+        self.title_label.setText("Repair Complete")
+        self.current_file_label.setText("")
+
+        # Replace cancel button with close button
+        self.cancel_button.setText("Close")
+        self.cancel_button.clicked.disconnect()
+        self.cancel_button.clicked.connect(self.accept)

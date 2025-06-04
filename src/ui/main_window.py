@@ -121,14 +121,28 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # Add Single File Mode toggle at the top
-        single_mode_layout = QHBoxLayout()
+        # Add Single File Mode toggle and Corruption Detection at the top
+        top_controls_layout = QHBoxLayout()
+
         self.single_file_mode_check = QCheckBox("Single File Mode (Investigation Only)")
         self.single_file_mode_check.setToolTip("Enable to investigate single files without processing groups")
         self.single_file_mode_check.stateChanged.connect(self.toggle_single_file_mode)
-        single_mode_layout.addWidget(self.single_file_mode_check)
-        single_mode_layout.addStretch()
-        main_layout.addLayout(single_mode_layout)
+        top_controls_layout.addWidget(self.single_file_mode_check)
+
+        # Add some spacing
+        top_controls_layout.addSpacing(30)
+
+        # Add corruption detection checkbox
+        self.corruption_detection_check = QCheckBox("Enable Corruption Detection & Repair")
+        self.corruption_detection_check.setChecked(True)  # Default to enabled
+        self.corruption_detection_check.setToolTip(
+            "Scan files for corruption before processing and offer repair options.\n"
+            "Disable this to skip corruption analysis for faster processing."
+        )
+        top_controls_layout.addWidget(self.corruption_detection_check)
+
+        top_controls_layout.addStretch()
+        main_layout.addLayout(top_controls_layout)
 
         # Create top section with drop zones
         drop_section = QHBoxLayout()
@@ -859,8 +873,8 @@ class MainWindow(QMainWindow):
             self.master_folder_input.setText(folder)
 
     def apply_alignment(self):
-        """Apply time alignment to all matching files with corruption detection and repair"""
-        logger.info("=== Starting enhanced apply_alignment with repair functionality ===")
+        """Apply time alignment to all matching files with optional corruption detection and repair"""
+        logger.info("=== Starting enhanced apply_alignment with optional repair functionality ===")
 
         try:
             # Determine which offset to use
@@ -929,14 +943,21 @@ class MainWindow(QMainWindow):
             # Record start time
             start_time = datetime.now()
 
-            # Create enhanced processor and run with repair functionality
+            # Create enhanced processor and run with optional repair functionality
             from ..core import AlignmentProcessor, AlignmentReport
             processor = AlignmentProcessor(self.exif_handler, self.file_processor)
 
-            # Override the repair choice method to show our UI dialog
-            processor._get_user_repair_choice = self._show_repair_dialog
+            # Check if corruption detection is enabled
+            if self.corruption_detection_check.isChecked():
+                logger.info("Corruption detection enabled - will scan files for corruption")
+                # Override the repair choice method to show our UI dialog
+                processor._get_user_repair_choice = self._show_repair_dialog
+            else:
+                logger.info("Corruption detection disabled - skipping corruption analysis")
+                # Override to always return no repair
+                processor._get_user_repair_choice = lambda summary, results: (False, False, None)
 
-            # Process files using enhanced approach with corruption detection
+            # Process files using enhanced approach with optional corruption detection
             if not self.target_file:
                 # Manual mode: treat reference files as target files so they get the offset
                 manual_offset = offset_to_use
@@ -1013,23 +1034,49 @@ class MainWindow(QMainWindow):
             if hasattr(self.file_processor, 'progress_callback'):
                 self.file_processor.progress_callback = None
 
-    def _show_repair_dialog(self, corruption_summary: Dict, corruption_results: Dict) -> bool:
-        """Show repair decision dialog to user"""
+    def _show_repair_dialog(self, corruption_summary: Dict, corruption_results: Dict) -> tuple:
+        """Show repair decision dialog to user and return (repair_choice, force_strategy, selected_strategy)"""
         try:
             from .repair_dialog import RepairDecisionDialog
+
+            # Validate corruption_summary has required keys
+            required_keys = ['total_files', 'healthy_files', 'repairable_files', 'unrepairable_files',
+                             'corruption_types', 'has_corruption']
+            for key in required_keys:
+                if key not in corruption_summary:
+                    logger.warning(f"Missing key '{key}' in corruption_summary, adding default value")
+                    if key == 'total_files':
+                        corruption_summary[key] = len(corruption_results)
+                    elif key in ['healthy_files', 'repairable_files', 'unrepairable_files']:
+                        corruption_summary[key] = 0
+                    elif key == 'corruption_types':
+                        corruption_summary[key] = {}
+                    elif key == 'has_corruption':
+                        corruption_summary[key] = False
+
+            logger.info(f"Showing repair dialog with summary: {corruption_summary}")
 
             dialog = RepairDecisionDialog(corruption_summary, corruption_results, self)
             dialog.exec_()
 
-            return dialog.get_repair_choice()
+            repair_choice = dialog.get_repair_choice()
+            force_strategy, selected_strategy = dialog.get_strategy_choice()
+
+            logger.info(
+                f"User repair choice: repair={repair_choice}, force={force_strategy}, strategy={selected_strategy}")
+            return repair_choice, force_strategy, selected_strategy
 
         except Exception as e:
             logger.error(f"Error showing repair dialog: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
             # Fallback to simple message box
+            repairable_count = corruption_summary.get('repairable_files', 0)
             reply = QMessageBox.question(
                 self,
                 "Corrupted Files Detected",
-                f"Found {corruption_summary.get('repairable_files', 0)} corrupted files.\n\n"
+                f"Found {repairable_count} corrupted files.\n\n"
                 "Attempt to repair them before processing?\n\n"
                 "• Yes: Try to repair files (backups will be created)\n"
                 "• No: Process as-is (corrupted files get filesystem dates only)",
@@ -1037,10 +1084,10 @@ class MainWindow(QMainWindow):
                 QMessageBox.Yes
             )
 
-            return reply == QMessageBox.Yes
+            return reply == QMessageBox.Yes, False, None
 
     def _generate_enhanced_report(self, status, time_offset, start_time, end_time, use_camera_folders):
-        """Generate enhanced report including repair information"""
+        """Generate enhanced report including repair information and backup paths"""
 
         from ..core.time_calculator import TimeCalculator
         offset_str, direction = TimeCalculator.format_offset(time_offset)
@@ -1061,20 +1108,34 @@ class MainWindow(QMainWindow):
             report.append(f"✗ Repair failed: {status.repair_failed} files")
             report.append("")
 
-            # Repair details
+            # Repair details with backup paths
             if hasattr(status, 'repair_results') and status.repair_results:
                 report.append("Repair Details:")
                 for file_path, repair_result in status.repair_results.items():
                     filename = os.path.basename(file_path)
                     if repair_result.success:
                         report.append(f"✓ {filename}: Repaired using {repair_result.strategy_used.value}")
+                        if repair_result.backup_path:
+                            report.append(f"  📁 Backup: {repair_result.backup_path}")
                     else:
                         report.append(f"✗ {filename}: {repair_result.error_message}")
+                        if repair_result.backup_path:
+                            report.append(f"  📁 Backup preserved: {repair_result.backup_path}")
+                report.append("")
+
+            # Backup summary
+            backup_paths = [rr.backup_path for rr in status.repair_results.values() if rr.backup_path]
+            if backup_paths:
+                report.append("Backup File Locations:")
+                for backup_path in backup_paths:
+                    report.append(f"📁 {backup_path}")
                 report.append("")
 
         # Metadata updates section
         report.append("Metadata Updates:")
         report.append(f"✓ Successfully updated: {status.metadata_updated} files")
+        if hasattr(status, 'repair_successful') and status.repair_successful > 0:
+            report.append(f"✓ Mandatory fields added: {status.repair_successful} files")
         if status.metadata_errors:
             report.append(f"✗ Errors: {len(status.metadata_errors)} files")
         if status.metadata_skipped:
@@ -1098,6 +1159,8 @@ class MainWindow(QMainWindow):
 
         if hasattr(status, 'repair_successful') and status.repair_successful > 0:
             report.append(f"- Files repaired: {status.repair_successful} files")
+            report.append(
+                f"- Backup files created: {len([rr for rr in status.repair_results.values() if rr.backup_path])} files")
 
         if status.metadata_errors:
             report.append(f"- Metadata update errors: {len(status.metadata_errors)} files")
@@ -1123,21 +1186,209 @@ class MainWindow(QMainWindow):
             return 0
 
     def show_results_dialog(self, status, report_text):
-        """Show results dialog with summary"""
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
+        """Show enhanced results dialog with selectable backup paths"""
+        from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox,
+                                     QTabWidget, QWidget, QHBoxLayout, QListWidget,
+                                     QListWidgetItem, QPushButton, QLabel, QSplitter)
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtGui import QFont, QColor, QBrush  # Added QColor and QBrush
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Alignment Results")
-        dialog.setMinimumSize(800, 600)
+        dialog.setMinimumSize(900, 700)
 
         layout = QVBoxLayout()
 
-        # Text area with report
-        text_edit = QTextEdit()
-        text_edit.setReadOnly(True)
-        text_edit.setPlainText(report_text)
-        text_edit.setFontFamily("Courier New")
-        layout.addWidget(text_edit)
+        # Create tab widget for different views
+        tab_widget = QTabWidget()
+
+        # Tab 1: Summary Report
+        summary_tab = QWidget()
+        summary_layout = QVBoxLayout()
+
+        # Summary text area
+        summary_text = QTextEdit()
+        summary_text.setReadOnly(True)
+        summary_text.setPlainText(report_text)
+        summary_text.setFontFamily("Courier New")
+        summary_layout.addWidget(summary_text)
+
+        summary_tab.setLayout(summary_layout)
+        tab_widget.addTab(summary_tab, "Summary Report")
+
+        # Tab 2: Backup Files (if any repairs were made)
+        if hasattr(status, 'repair_results') and status.repair_results:
+            backup_tab = QWidget()
+            backup_layout = QVBoxLayout()
+
+            # Instructions
+            backup_info = QLabel(
+                "Backup files created during repair process:\n"
+                "• Select any path below to copy it to clipboard\n"
+                "• These files contain your original, unmodified data\n"
+                "• Keep these backups until you're satisfied with the repair results"
+            )
+            backup_info.setStyleSheet(
+                "background-color: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 10px;")
+            backup_info.setWordWrap(True)
+            backup_layout.addWidget(backup_info)
+
+            # Create splitter for backup list and details
+            splitter = QSplitter(Qt.Horizontal)
+
+            # Backup files list
+            backup_list_widget = QListWidget()
+            backup_list_widget.setToolTip("Click on any backup path to copy it to clipboard")
+
+            # Populate backup list
+            backup_files = []
+            for file_path, repair_result in status.repair_results.items():
+                if repair_result.backup_path:
+                    # Create display item
+                    original_name = os.path.basename(file_path)
+                    backup_path = repair_result.backup_path
+                    backup_name = os.path.basename(backup_path)
+
+                    display_text = f"{original_name} → {backup_name}"
+
+                    item = QListWidgetItem(display_text)
+                    item.setData(Qt.UserRole, backup_path)  # Store full path
+                    item.setToolTip(f"Click to copy path to clipboard:\n{backup_path}")
+
+                    # Color code by repair success - Fixed method names
+                    if repair_result.success:
+                        # Light green background for successful repairs
+                        item.setBackground(QBrush(QColor(200, 255, 200)))
+                        item.setToolTip(item.toolTip() + "\n\n✅ Repair successful")
+                    else:
+                        # Light yellow background for failed repairs
+                        item.setBackground(QBrush(QColor(255, 255, 200)))
+                        item.setToolTip(item.toolTip() + "\n\n⚠️ Repair failed - backup preserved")
+
+                    backup_list_widget.addItem(item)
+                    backup_files.append((file_path, backup_path, repair_result))
+
+            # Details panel
+            details_widget = QTextEdit()
+            details_widget.setReadOnly(True)
+            details_widget.setPlainText("Select a backup file to see details...")
+
+            def on_backup_selected():
+                current_item = backup_list_widget.currentItem()
+                if current_item:
+                    backup_path = current_item.data(Qt.UserRole)
+
+                    # Copy to clipboard
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(backup_path)
+
+                    # Show details
+                    file_path = None
+                    repair_result = None
+                    for fp, bp, rr in backup_files:
+                        if bp == backup_path:
+                            file_path = fp
+                            repair_result = rr
+                            break
+
+                    if repair_result:
+                        details_text = f"Backup Details:\n\n"
+                        details_text += f"Original File: {os.path.basename(file_path)}\n"
+                        details_text += f"Original Path: {file_path}\n\n"
+                        details_text += f"Backup File: {os.path.basename(backup_path)}\n"
+                        details_text += f"Backup Path: {backup_path}\n\n"
+                        details_text += f"Repair Strategy: {repair_result.strategy_used.value}\n"
+                        details_text += f"Repair Success: {'✅ Yes' if repair_result.success else '❌ No'}\n"
+                        details_text += f"Verification Passed: {'✅ Yes' if repair_result.verification_passed else '❌ No'}\n\n"
+
+                        if not repair_result.success and repair_result.error_message:
+                            details_text += f"Error Message: {repair_result.error_message}\n\n"
+
+                        details_text += f"📋 Path copied to clipboard!"
+
+                        details_widget.setPlainText(details_text)
+
+            backup_list_widget.itemClicked.connect(on_backup_selected)
+            backup_list_widget.itemSelectionChanged.connect(on_backup_selected)
+
+            splitter.addWidget(backup_list_widget)
+            splitter.addWidget(details_widget)
+            splitter.setSizes([300, 400])  # Give more space to details
+
+            backup_layout.addWidget(splitter)
+
+            # Copy all paths button
+            button_layout = QHBoxLayout()
+            copy_all_button = QPushButton("Copy All Backup Paths")
+            copy_all_button.setToolTip("Copy all backup file paths to clipboard")
+
+            def copy_all_paths():
+                all_paths = []
+                for _, backup_path, _ in backup_files:
+                    all_paths.append(backup_path)
+
+                if all_paths:
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText('\n'.join(all_paths))
+                    copy_all_button.setText("✅ Copied!")
+                    # Reset button text after 2 seconds
+                    from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(2000, lambda: copy_all_button.setText("Copy All Backup Paths"))
+
+            copy_all_button.clicked.connect(copy_all_paths)
+            button_layout.addWidget(copy_all_button)
+            button_layout.addStretch()
+
+            backup_layout.addLayout(button_layout)
+            backup_tab.setLayout(backup_layout)
+            tab_widget.addTab(backup_tab, f"Backup Files ({len(backup_files)})")
+
+        # Tab 3: Detailed Results (if there were any issues)
+        if (status.metadata_errors or status.move_errors or
+                (hasattr(status, 'repair_failed') and status.repair_failed > 0)):
+
+            details_tab = QWidget()
+            details_layout = QVBoxLayout()
+
+            details_text = QTextEdit()
+            details_text.setReadOnly(True)
+            details_text.setFontFamily("Courier New")
+
+            # Build detailed error information
+            detailed_info = []
+
+            if hasattr(status, 'repair_failed') and status.repair_failed > 0:
+                detailed_info.append("=== REPAIR FAILURES ===")
+                for file_path, repair_result in getattr(status, 'repair_results', {}).items():
+                    if not repair_result.success:
+                        detailed_info.append(f"File: {os.path.basename(file_path)}")
+                        detailed_info.append(f"  Strategy Attempted: {repair_result.strategy_used.value}")
+                        detailed_info.append(f"  Error: {repair_result.error_message}")
+                        if repair_result.backup_path:
+                            detailed_info.append(f"  Backup: {repair_result.backup_path}")
+                        detailed_info.append("")
+
+            if status.metadata_errors:
+                detailed_info.append("=== METADATA UPDATE ERRORS ===")
+                for file_path, error_msg in status.metadata_errors:
+                    detailed_info.append(f"File: {os.path.basename(file_path)}")
+                    detailed_info.append(f"  Error: {error_msg}")
+                    detailed_info.append("")
+
+            if status.move_errors:
+                detailed_info.append("=== FILE MOVE ERRORS ===")
+                for file_path, error_msg in status.move_errors:
+                    detailed_info.append(f"File: {os.path.basename(file_path)}")
+                    detailed_info.append(f"  Error: {error_msg}")
+                    detailed_info.append("")
+
+            details_text.setPlainText("\n".join(detailed_info))
+            details_layout.addWidget(details_text)
+
+            details_tab.setLayout(details_layout)
+            tab_widget.addTab(details_tab, "Detailed Errors")
+
+        layout.addWidget(tab_widget)
 
         # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
@@ -1383,6 +1634,10 @@ class MainWindow(QMainWindow):
         single_mode = self.config_manager.get('single_file_mode', False)
         self.single_file_mode_check.setChecked(single_mode)
 
+        # Load corruption detection preference (default to True)
+        corruption_detection = self.config_manager.get('corruption_detection_enabled', True)
+        self.corruption_detection_check.setChecked(corruption_detection)
+
     def clear_loaded_files(self):
         """Clear both reference and target files and reset the UI"""
         logger.info("Clearing loaded files")
@@ -1446,6 +1701,7 @@ class MainWindow(QMainWindow):
             self.target_time_container.removeWidget(container)
             container.deleteLater()
         self.target_time_radios.clear()
+
     def closeEvent(self, event):
         """Save configuration on close"""
         # Terminate any running threads
@@ -1467,5 +1723,7 @@ class MainWindow(QMainWindow):
         self.config_manager.set('last_master_folder', self.master_folder_input.text())
         self.config_manager.set('move_to_master', self.move_files_check.isChecked())
         self.config_manager.set('single_file_mode', self.single_file_mode_check.isChecked())
+        # Save corruption detection preference
+        self.config_manager.set('corruption_detection_enabled', self.corruption_detection_check.isChecked())
         self.config_manager.save()
         event.accept()

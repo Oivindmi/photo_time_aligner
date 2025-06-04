@@ -1,4 +1,4 @@
-# src/core/repair_strategies.py - Robust repair strategies without caching
+# src/core/repair_strategies.py - Robust repair strategies with Windows path fixes
 
 import os
 import tempfile
@@ -26,10 +26,11 @@ class RepairResult:
     success: bool
     error_message: str
     verification_passed: bool
+    backup_path: str = ""  # New field for backup file path
 
 
 class FileRepairer:
-    """Repair corrupted files using robust single-step strategies"""
+    """Repair corrupted files using robust single-step strategies with user choice"""
 
     def __init__(self, exiftool_path: str = "exiftool"):
         self.exiftool_path = exiftool_path
@@ -43,10 +44,14 @@ class FileRepairer:
         ]
 
     def repair_file(self, file_path: str, corruption_type: CorruptionType,
-                    backup_dir: str) -> RepairResult:
-        """Repair a single file using best available strategy"""
+                    backup_dir: str, force_strategy: bool = False,
+                    selected_strategy: RepairStrategy = None) -> RepairResult:
+        """Repair a single file using best available strategy or forced strategy"""
 
         logger.info(f"Attempting repair of {os.path.basename(file_path)} (type: {corruption_type.value})")
+
+        if force_strategy and selected_strategy:
+            logger.info(f"Using forced strategy: {selected_strategy.value}")
 
         # Create backup
         backup_path = self._create_backup(file_path, backup_dir)
@@ -55,11 +60,20 @@ class FileRepairer:
                 strategy_used=RepairStrategy.SAFEST,
                 success=False,
                 error_message="Failed to create backup",
-                verification_passed=False
+                verification_passed=False,
+                backup_path=""
             )
 
+        # Determine which strategies to try
+        if force_strategy and selected_strategy:
+            # Use only the selected strategy
+            strategies_to_try = [selected_strategy]
+        else:
+            # Use automatic progression
+            strategies_to_try = self.strategies
+
         # Try each strategy in order until one works
-        for strategy in self.strategies:
+        for strategy in strategies_to_try:
             logger.debug(f"Trying {strategy.value} repair on {os.path.basename(file_path)}")
 
             try:
@@ -80,17 +94,49 @@ class FileRepairer:
                             strategy_used=strategy,
                             success=True,
                             error_message="",
-                            verification_passed=True
+                            verification_passed=True,
+                            backup_path=backup_path
                         )
                     else:
                         logger.debug(f"{strategy.value} repair completed but verification failed")
+
+                        # If forcing a strategy and it fails verification, still return success
+                        # but indicate verification failed
+                        if force_strategy:
+                            return RepairResult(
+                                strategy_used=strategy,
+                                success=True,
+                                error_message="Repair completed but verification failed",
+                                verification_passed=False,
+                                backup_path=backup_path
+                            )
                         continue
                 else:
                     logger.debug(f"{strategy.value} repair failed: {repair_error}")
+
+                    # If forcing a strategy and it fails, return the failure
+                    if force_strategy:
+                        return RepairResult(
+                            strategy_used=strategy,
+                            success=False,
+                            error_message=repair_error,
+                            verification_passed=False,
+                            backup_path=backup_path
+                        )
                     continue
 
             except Exception as e:
                 logger.debug(f"Exception during {strategy.value} repair: {e}")
+
+                # If forcing a strategy and it has an exception, return the failure
+                if force_strategy:
+                    return RepairResult(
+                        strategy_used=strategy,
+                        success=False,
+                        error_message=str(e),
+                        verification_passed=False,
+                        backup_path=backup_path
+                    )
                 continue
 
         # All strategies failed - restore backup and return failure
@@ -100,16 +146,15 @@ class FileRepairer:
             logger.error(f"Failed to restore backup for {file_path}: {e}")
 
         return RepairResult(
-            strategy_used=RepairStrategy.FILESYSTEM_ONLY,
+            strategy_used=strategies_to_try[-1] if strategies_to_try else RepairStrategy.FILESYSTEM_ONLY,
             success=False,
-            error_message="All repair strategies failed",
-            verification_passed=False
+            error_message="All repair strategies failed" if not force_strategy else f"{selected_strategy.value} strategy failed",
+            verification_passed=False,
+            backup_path=backup_path
         )
 
     def _create_backup(self, file_path: str, backup_dir: str) -> Optional[str]:
         """Create backup of file before repair with Windows path handling"""
-        import tempfile  # Import at the top to avoid scoping issues
-
         try:
             # Normalize the path separators
             file_path = os.path.normpath(file_path)
@@ -217,7 +262,7 @@ class FileRepairer:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             success = result.returncode == 0 and (
-                        "1 image files updated" in result.stdout or "updated" in result.stdout.lower())
+                    "1 image files updated" in result.stdout or "updated" in result.stdout.lower())
             return success, result.stderr or result.stdout
         except Exception as e:
             return False, str(e)
@@ -281,8 +326,6 @@ class FileRepairer:
 
     def _verify_repair(self, file_path: str) -> bool:
         """Verify repair by testing datetime update with path handling"""
-        import tempfile  # Import at the top to avoid scoping issues
-
         # Create backup path with better handling
         try:
             # Use a simpler backup name to avoid path issues
