@@ -165,12 +165,26 @@ class CorruptionDetector:
 
         error_lower = error_message.lower()
 
+        # Clean up error message for display
+        clean_error = error_message
+
+        # Remove file paths from error messages to make them cleaner
+        if " - " in clean_error and ("c:/" in clean_error.lower() or ":" in clean_error):
+            parts = clean_error.split(" - ")
+            if len(parts) > 1:
+                # Keep the first part (actual error) and remove file path parts
+                clean_error = parts[0].strip()
+
+        # Limit error message length
+        if len(clean_error) > 150:
+            clean_error = clean_error[:150] + "..."
+
         # MakerNotes issues
         if "makernotes" in error_lower or "offsets may be incorrect" in error_lower:
             return CorruptionInfo(
                 file_path=file_path,
                 corruption_type=CorruptionType.MAKERNOTES,
-                error_message=error_message,
+                error_message=clean_error,
                 is_repairable=True,
                 estimated_success_rate=0.9
             )
@@ -178,12 +192,12 @@ class CorruptionDetector:
         # EXIF structure corruption
         elif any(term in error_lower for term in [
             "stripoffsets", "ifd0", "ifd1", "exif structure",
-            "invalid exif", "bad exif", "corrupt exif"
+            "invalid exif", "bad exif", "corrupt exif", "error reading"
         ]):
             return CorruptionInfo(
                 file_path=file_path,
                 corruption_type=CorruptionType.EXIF_STRUCTURE,
-                error_message=error_message,
+                error_message=clean_error,
                 is_repairable=True,
                 estimated_success_rate=0.7
             )
@@ -193,7 +207,7 @@ class CorruptionDetector:
             return CorruptionInfo(
                 file_path=file_path,
                 corruption_type=CorruptionType.FILESYSTEM_ONLY,
-                error_message=error_message,
+                error_message=clean_error,
                 is_repairable=True,
                 estimated_success_rate=0.3  # Can add basic EXIF structure
             )
@@ -203,7 +217,7 @@ class CorruptionDetector:
             return CorruptionInfo(
                 file_path=file_path,
                 corruption_type=CorruptionType.SEVERE_CORRUPTION,
-                error_message=error_message,
+                error_message=clean_error,
                 is_repairable=True,
                 estimated_success_rate=0.2
             )
@@ -228,8 +242,10 @@ class CorruptionDetector:
             type_name = corruption_info.corruption_type.value
             corruption_types[type_name] = corruption_types.get(type_name, 0) + 1
 
+        total_files = len(corruption_results)
+
         return {
-            'total_files': len(corruption_results),
+            'total_files': total_files,  # Make sure this key is always present
             'healthy_files': healthy_count,
             'repairable_files': repairable_count,
             'unrepairable_files': unrepairable_count,

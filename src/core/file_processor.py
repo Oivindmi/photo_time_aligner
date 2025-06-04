@@ -35,7 +35,7 @@ class FileProcessor:
         logger.info(f"FileProcessor initialized with {len(self.supported_extensions)} supported formats")
 
         # Group processing settings
-        self.GROUP_SIZE = 80
+        self.GROUP_SIZE = 60
         self.progress_callback = None
 
     def find_matching_files_incremental(self, reference_file: str, use_camera_match: bool = True,

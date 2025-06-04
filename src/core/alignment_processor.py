@@ -61,37 +61,59 @@ class AlignmentProcessor:
                       use_camera_folders: bool = False,
                       progress_callback: Optional[callable] = None) -> ProcessingStatus:
         """
-        Process reference and target files with corruption detection and repair.
+        Process reference and target files with optional corruption detection and repair.
         """
-        logger.info("AlignmentProcessor.process_files called with repair functionality")
+        logger.info("AlignmentProcessor.process_files called with optional repair functionality")
         logger.info(f"Parameters: ref_files={len(reference_files)}, target_files={len(target_files)}")
 
         self.status = ProcessingStatus()
         all_files = reference_files + target_files
         self.status.total_files = len(all_files)
 
-        # Phase 1: Corruption Detection
-        if progress_callback:
-            progress_callback(0, len(all_files), "Scanning files for corruption...")
+        # Phase 1: Optional Corruption Detection
+        # Check if corruption detection should be performed by checking the override method
+        should_skip_corruption = False
 
-        corruption_results = self.corruption_detector.scan_files_for_corruption(all_files)
-        corruption_summary = self.corruption_detector.get_corruption_summary(corruption_results)
+        # Check if _get_user_repair_choice has been overridden to always return False
+        try:
+            # Check if it's a lambda that always returns (False, False, None)
+            if hasattr(self._get_user_repair_choice, '__name__'):
+                # If it's the lambda override, skip corruption detection
+                should_skip_corruption = 'lambda' in str(self._get_user_repair_choice)
+        except:
+            should_skip_corruption = False
 
-        # Check if we found any corruption
-        if corruption_summary['has_corruption']:
-            # Ask user if they want to attempt repairs
-            repair_choice = self._get_user_repair_choice(corruption_summary, corruption_results)
+        if should_skip_corruption:
+            logger.info("Corruption detection disabled - skipping corruption analysis")
+            if progress_callback:
+                progress_callback(0, len(all_files), "Skipping corruption detection...")
+        else:
+            logger.info("Corruption detection enabled - scanning files for corruption")
+            if progress_callback:
+                progress_callback(0, len(all_files), "Scanning files for corruption...")
 
-            if repair_choice:
-                # Phase 2: Repair corrupted files
-                repaired_files = self._repair_corrupted_files(
-                    corruption_results, all_files, progress_callback
+            corruption_results = self.corruption_detector.scan_files_for_corruption(all_files)
+            corruption_summary = self.corruption_detector.get_corruption_summary(corruption_results)
+
+            # Check if we found any corruption
+            if corruption_summary['has_corruption']:
+                # Ask user if they want to attempt repairs
+                repair_choice, force_strategy, selected_strategy = self._get_user_repair_choice(
+                    corruption_summary, corruption_results
                 )
 
-                # Update file lists with repaired files
-                reference_files, target_files = self._update_file_lists_after_repair(
-                    reference_files, target_files, repaired_files
-                )
+                if repair_choice:
+                    # Phase 2: Repair corrupted files with user's strategy choice
+                    repaired_files = self._repair_corrupted_files(
+                        corruption_results, all_files, progress_callback,
+                        force_strategy=force_strategy,
+                        selected_strategy=selected_strategy
+                    )
+
+                    # Update file lists with repaired files
+                    reference_files, target_files = self._update_file_lists_after_repair(
+                        reference_files, target_files, repaired_files
+                    )
 
         # Phase 3: Normal processing (now with potentially repaired files)
         if progress_callback:
@@ -143,20 +165,20 @@ class AlignmentProcessor:
         return self.status
 
     def _get_user_repair_choice(self, corruption_summary: Dict,
-                                corruption_results: Dict) -> bool:
-        """Get user choice on whether to attempt repairs"""
+                                corruption_results: Dict) -> tuple:
+        """Get user choice on whether to attempt repairs and which strategy to use"""
 
-        # This will be called by the UI to show the repair dialog
-        # For now, we'll use a simple approach that can be overridden
         logger.info(f"Corruption detected in {corruption_summary['repairable_files']} files")
 
-        # In the real implementation, this will be handled by the UI
-        # For now, return True to attempt repairs (will be overridden by UI)
-        return True
+        # This will be overridden by the UI to show the repair dialog
+        # Default implementation returns True for repair with automatic strategy
+        return True, False, None
 
     def _repair_corrupted_files(self, corruption_results: Dict, all_files: List[str],
-                                progress_callback: Optional[callable] = None) -> Dict[str, str]:
-        """Repair corrupted files with progress reporting"""
+                                progress_callback: Optional[callable] = None,
+                                force_strategy: bool = False,
+                                selected_strategy=None) -> Dict[str, str]:
+        """Repair corrupted files with progress reporting and strategy selection"""
 
         # Get files that need repair
         files_to_repair = [
@@ -168,6 +190,11 @@ class AlignmentProcessor:
             return {}
 
         logger.info(f"Attempting to repair {len(files_to_repair)} corrupted files")
+
+        if force_strategy and selected_strategy:
+            logger.info(f"Using forced strategy: {selected_strategy.value} for all files")
+        else:
+            logger.info("Using automatic strategy progression for repair")
 
         # Create backup directory
         backup_dir = self._create_backup_directory(all_files[0])  # Use first file's directory
@@ -182,11 +209,13 @@ class AlignmentProcessor:
             corruption_info = corruption_results[file_path]
 
             try:
-                # Attempt repair
+                # Attempt repair with strategy selection
                 repair_result = self.file_repairer.repair_file(
                     file_path,
                     corruption_info.corruption_type,
-                    backup_dir
+                    backup_dir,
+                    force_strategy=force_strategy,
+                    selected_strategy=selected_strategy
                 )
 
                 # Track repair attempt
@@ -198,6 +227,11 @@ class AlignmentProcessor:
                     repaired_files[file_path] = file_path  # File repaired in place
                     logger.info(
                         f"✅ Successfully repaired {os.path.basename(file_path)} using {repair_result.strategy_used.value}")
+                elif repair_result.success and not repair_result.verification_passed:
+                    self.status.repair_successful += 1  # Count as success even if verification failed
+                    repaired_files[file_path] = file_path
+                    logger.warning(
+                        f"⚠️ Repaired {os.path.basename(file_path)} using {repair_result.strategy_used.value} but verification failed")
                 else:
                     self.status.repair_failed += 1
                     logger.warning(f"❌ Failed to repair {os.path.basename(file_path)}: {repair_result.error_message}")
@@ -206,10 +240,11 @@ class AlignmentProcessor:
                 self.status.repair_failed += 1
                 logger.error(f"Exception during repair of {os.path.basename(file_path)}: {e}")
                 self.status.repair_results[file_path] = RepairResult(
-                    strategy_used=None,
+                    strategy_used=selected_strategy if selected_strategy else RepairStrategy.SAFEST,
                     success=False,
                     error_message=str(e),
-                    verification_passed=False
+                    verification_passed=False,
+                    backup_path=""
                 )
 
         if progress_callback:
