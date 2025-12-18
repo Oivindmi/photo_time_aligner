@@ -1,0 +1,45 @@
+# Ignore generated and sample media files
+# Keep only the directory structure for developers to add their own files
+
+# Sample media files (add your own real files here)
+clean/*.jpg
+clean/*.jpeg
+clean/*.mp4
+clean/*.mov
+clean/*.cr2
+clean/*.nef
+clean/*.dng
+clean/*.avi
+clean/*.mkv
+
+# Generated corrupted files
+corrupted/*.jpg
+corrupted/*.jpeg
+corrupted/*.mp4
+corrupted/*.mov
+corrupted/*.cr2
+corrupted/*.nef
+
+# Batch test files (generated during testing)
+batch_test_base/
+batch_test_base/*.jpg
+batch_test_base/*.jpeg
+batch_test_base/*.mp4
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Do NOT ignore the directory structure itself - developers need these folders
+# Use: git add -f .gitkeep files to preserve empty directories if needed
+!clean/.gitkeep
+!corrupted/.gitkeep
+!batch_test_base/.gitkeep
