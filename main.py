@@ -8,7 +8,7 @@ from src.utils import ExifToolNotFoundError
 
 # Set up logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -67,10 +67,10 @@ def cleanup(exif_handler):
     """Clean up resources before application exit"""
     logger.info("Performing application cleanup")
     try:
-        # Stop the ExifTool process
-        if hasattr(exif_handler, 'exiftool_process'):
-            exif_handler.exiftool_process.stop()
-            logger.info("ExifTool process stopped")
+        # Stop the ExifTool process pool
+        if hasattr(exif_handler, 'exiftool_pool'):
+            exif_handler.exiftool_pool.shutdown()
+            logger.info("ExifTool process pool shut down")
     except Exception as e:
         logger.error(f"Error during cleanup: {str(e)}")
 

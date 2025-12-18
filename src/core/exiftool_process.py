@@ -1,3 +1,4 @@
+import atexit
 import subprocess
 import logging
 import os
@@ -23,6 +24,10 @@ class ExifToolProcess:
         self.running = False
         self.command_counter = 0
         self._lock = threading.Lock()
+
+        # Register atexit handler as secondary safety net
+        # (primary is ExifToolProcessPool._atexit_cleanup)
+        atexit.register(self._atexit_cleanup)
 
     def _find_exiftool(self) -> str:
         """Find ExifTool executable"""
@@ -294,6 +299,39 @@ class ExifToolProcess:
             # Clean up the argument file (same as batch operations)
             if os.path.exists(arg_file_path):
                 os.remove(arg_file_path)
+
+    def _atexit_cleanup(self):
+        """
+        Secondary fallback cleanup for individual process.
+        Primary cleanup is handled by ExifToolProcessPool.
+        This is a safety net in case pool cleanup fails or process is orphaned.
+        """
+        if not self.running:
+            # Already stopped or never started
+            return
+
+        logger.warning(
+            "⚠️ atexit cleanup triggered on ExifToolProcess - "
+            "normal shutdown may have failed"
+        )
+
+        try:
+            # Attempt graceful stop
+            self.stop()
+        except Exception as e:
+            logger.debug(f"Graceful stop failed during atexit: {e}")
+
+            # Force kill as fallback
+            try:
+                if self.process and self.process.poll() is None:
+                    self.process.kill()
+                    logger.debug("Force killed ExifTool process")
+            except Exception as kill_error:
+                logger.debug(f"Could not force kill: {kill_error}")
+        finally:
+            self.running = False
+            self.process = None
+
     def __del__(self):
         """Ensure the process is terminated when the object is deleted"""
         self.stop()

@@ -1,3 +1,4 @@
+import atexit
 import queue
 import threading
 import logging
@@ -21,6 +22,9 @@ class ExifToolProcessPool:
         self._lock = threading.Lock()
         self._shutdown = False
 
+        # Register atexit handler as fallback safety net
+        atexit.register(self._atexit_cleanup)
+
         # Initialize the pool
         self._initialize_pool()
 
@@ -40,6 +44,35 @@ class ExifToolProcessPool:
             except Exception as e:
                 logger.error(f"Failed to start ExifTool process {i + 1}: {e}")
                 raise
+
+    def _atexit_cleanup(self):
+        """
+        Last-resort cleanup handler if normal shutdown fails.
+        This is called automatically by Python during exit.
+        """
+        if self._shutdown:
+            # Already cleaned up normally - nothing to do
+            return
+
+        logger.warning(
+            "⚠️ atexit cleanup triggered - normal shutdown may have failed! "
+            "This indicates the application may have been force-terminated or crashed."
+        )
+
+        try:
+            self.shutdown()
+        except Exception as e:
+            logger.error(f"Error during atexit cleanup: {e}")
+
+            # Last resort: force kill all processes
+            logger.warning("Attempting force termination of all ExifTool processes...")
+            for i, proc in enumerate(self.processes):
+                try:
+                    if proc.process:
+                        proc.process.kill()
+                        logger.debug(f"Force killed ExifTool process {i + 1}")
+                except Exception as kill_error:
+                    logger.debug(f"Could not force kill process {i + 1}: {kill_error}")
 
     def restart_pool(self):
         """Restart the entire process pool to prevent process accumulation"""
