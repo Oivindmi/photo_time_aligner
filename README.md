@@ -1,5 +1,8 @@
 # Photo & Video Time Aligner
 
+[![Test Pipeline](https://github.com/OivindHoem/photo_time_aligner/actions/workflows/test-pipeline.yml/badge.svg)](https://github.com/OivindHoem/photo_time_aligner/actions/workflows/test-pipeline.yml)
+[![Nightly Performance Tests](https://github.com/OivindHoem/photo_time_aligner/actions/workflows/nightly-performance.yml/badge.svg)](https://github.com/OivindHoem/photo_time_aligner/actions/workflows/nightly-performance.yml)
+
 A Windows application for synchronizing timestamps across photos and videos from different cameras, with manual time adjustment capabilities, comprehensive metadata investigation tools, single file investigation mode, and **advanced corruption detection and repair with user-controlled strategy selection**.
 
 ## Features
