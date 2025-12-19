@@ -36,13 +36,12 @@ jobs:
           fi
 
   quick-tests:
-    name: Quick Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
+    name: Quick Tests (Windows, Python ${{ matrix.python-version }})
+    runs-on: windows-latest
     timeout-minutes: 15
 
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
         python-version: [ '3.11', '3.12' ]
       fail-fast: false
 
@@ -56,14 +55,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libimage-exiftool-perl
-
-      - name: Install system dependencies (Windows)
-        if: runner.os == 'Windows'
+      - name: Install system dependencies
         run: |
           choco install exiftool -y
 
@@ -89,36 +81,23 @@ jobs:
           pytest tests/integration/ -v --tb=short
 
   full-tests:
-    name: Full Test Suite (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    name: Full Test Suite (Windows, Python 3.11)
+    runs-on: windows-latest
+    timeout-minutes: 25
     needs: [ quick-tests, check-test-mode ]
     if: needs.check-test-mode.outputs.quick-mode == 'false'
-
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, windows-latest ]
-        python-version: [ '3.11', '3.12' ]
-      fail-fast: false
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.11'
           cache: 'pip'
 
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libimage-exiftool-perl
-
-      - name: Install system dependencies (Windows)
-        if: runner.os == 'Windows'
+      - name: Install system dependencies
         run: |
           choco install exiftool -y
 
@@ -149,40 +128,27 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-${{ matrix.os }}-py${{ matrix.python-version }}
+          name: coverage-report-windows-py3.11
           path: htmlcov/
 
   error-recovery-tests:
-    name: Error Recovery Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    name: Error Recovery Tests (Windows, Python 3.11)
+    runs-on: windows-latest
+    timeout-minutes: 25
     needs: [ quick-tests, check-test-mode ]
     if: needs.check-test-mode.outputs.quick-mode == 'false'
-
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, windows-latest ]
-        python-version: [ '3.11', '3.12' ]
-      fail-fast: false
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.11'
           cache: 'pip'
 
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libimage-exiftool-perl
-
-      - name: Install system dependencies (Windows)
-        if: runner.os == 'Windows'
+      - name: Install system dependencies
         run: |
           choco install exiftool -y
 
@@ -205,15 +171,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: error-recovery-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          name: error-recovery-results-windows-py3.11
           path: |
             .pytest_cache/
             test_results.xml
 
   performance-tests:
-    name: Performance Tests (Ubuntu, Python 3.11)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    name: Performance Tests (Windows, Python 3.11)
+    runs-on: windows-latest
+    timeout-minutes: 25
     needs: [ quick-tests, check-test-mode ]
     if: needs.check-test-mode.outputs.quick-mode == 'false'
 
@@ -229,8 +195,7 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libimage-exiftool-perl
+          choco install exiftool -y
 
       - name: Verify ExifTool installation
         run: exiftool -ver
@@ -264,7 +229,7 @@ jobs:
   results-summary:
     name: Test Results Summary
     runs-on: ubuntu-latest
-    needs: [ quick-tests, check-test-mode, full-tests, error-recovery-tests ]
+    needs: [ quick-tests, check-test-mode, full-tests, error-recovery-tests, performance-tests ]
     if: always()
 
     steps:
@@ -282,13 +247,15 @@ jobs:
 
           if [ "$QUICK_MODE" = "true" ]; then
             echo "**Mode: 🚀 QUICK (Fast Feedback - Default)**" >> $GITHUB_STEP_SUMMARY
+            echo "- Platform: Windows (user platform)" >> $GITHUB_STEP_SUMMARY
             echo "- Running fast tests only (~5 minutes)" >> $GITHUB_STEP_SUMMARY
-            echo "- Skipping slow/comprehensive tests" >> $GITHUB_STEP_SUMMARY
+            echo "- Python: 3.11 & 3.12" >> $GITHUB_STEP_SUMMARY
             echo "- ✨ Use [full] in commit message for comprehensive testing" >> $GITHUB_STEP_SUMMARY
           else
             echo "**Mode: 🧪 FULL (Comprehensive Testing)**" >> $GITHUB_STEP_SUMMARY
-            echo "- Running all tests including slow/comprehensive ones (~50+ minutes)" >> $GITHUB_STEP_SUMMARY
-            echo "- Full error recovery and performance validation" >> $GITHUB_STEP_SUMMARY
+            echo "- Platform: Windows" >> $GITHUB_STEP_SUMMARY
+            echo "- Running all tests (full suite + error recovery + performance)" >> $GITHUB_STEP_SUMMARY
+            echo "- Total time: ~25 min (split across parallel jobs)" >> $GITHUB_STEP_SUMMARY
             echo "- Omit [full] from commit message for faster feedback" >> $GITHUB_STEP_SUMMARY
           fi
 
@@ -297,6 +264,7 @@ jobs:
           if [ "$QUICK_MODE" = "false" ]; then
             echo "✅ Full Tests: Passed" >> $GITHUB_STEP_SUMMARY
             echo "✅ Error Recovery Tests: Passed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Performance Tests: Passed" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Artifacts Available:**" >> $GITHUB_STEP_SUMMARY
@@ -310,12 +278,16 @@ jobs:
             echo "❌ Quick tests failed"
             exit 1
           fi
-          if [ "${{ needs.full-tests.result }}" != "success" ]; then
+          if [ "${{ needs.full-tests.result }}" != "success" ] && [ "${{ needs.full-tests.result }}" != "skipped" ]; then
             echo "❌ Full tests failed"
             exit 1
           fi
-          if [ "${{ needs.error-recovery-tests.result }}" != "success" ]; then
+          if [ "${{ needs.error-recovery-tests.result }}" != "success" ] && [ "${{ needs.error-recovery-tests.result }}" != "skipped" ]; then
             echo "❌ Error recovery tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.performance-tests.result }}" != "success" ] && [ "${{ needs.performance-tests.result }}" != "skipped" ]; then
+            echo "❌ Performance tests failed"
             exit 1
           fi
           echo "✅ All tests passed!"

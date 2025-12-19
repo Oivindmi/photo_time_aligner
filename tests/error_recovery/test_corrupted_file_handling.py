@@ -370,7 +370,7 @@ class TestCorruptedFileHandlingAtScale:
         performance_monitor.start()
 
         # Simulate group processing
-        initial_memory = performance_monitor._start_memory
+        initial_memory = performance_monitor.start_memory
 
         performance_monitor.stop()
 
