@@ -1,0 +1,118 @@
+{
+  "project": {
+    "name": "Photo Time Aligner",
+    "version": "3.0.0",
+    "language": "python",
+    "framework": "PyQt5"
+  },
+  
+  "agents": {
+    "default": "orchestrator",
+    "available": [
+      {
+        "name": "orchestrator",
+        "file": ".claude/agents/orchestrator.md",
+        "description": "Main agent - understands requests and delegates to specialists"
+      },
+      {
+        "name": "debugger", 
+        "file": ".claude/agents/debugger.md",
+        "description": "Bug investigation and fixing specialist"
+      },
+      {
+        "name": "architect",
+        "file": ".claude/agents/architect.md", 
+        "description": "Feature design and refactoring specialist"
+      },
+      {
+        "name": "tester",
+        "file": ".claude/agents/tester.md",
+        "description": "Testing and quality assurance specialist"
+      },
+      {
+        "name": "documenter",
+        "file": ".claude/agents/documenter.md",
+        "description": "Documentation specialist"
+      },
+      {
+        "name": "reviewer",
+        "file": ".claude/agents/reviewer.md",
+        "description": "Code review specialist"
+      }
+    ]
+  },
+
+  "context": {
+    "always_include": [
+      "CLAUDE.md"
+    ],
+    "include_on_relevant": [
+      "docs/adr/*.md",
+      "docs/DESIGN_DECISIONS.md"
+    ]
+  },
+
+  "commands": {
+    "run": "python main.py",
+    "test": "python -m pytest tests/ -v",
+    "troubleshoot": "python troubleshoot_files.py",
+    "test_corruption": "python test_corruption_fix.py",
+    "test_repair": "python test_exiftool_repair.py"
+  },
+
+  "patterns": {
+    "critical": [
+      {
+        "name": "Unicode Path Handling",
+        "description": "Always use argument files for ExifTool with -charset filename=utf8",
+        "applies_to": ["src/core/exiftool_process.py", "src/core/repair_strategies.py"]
+      },
+      {
+        "name": "Process Pool Management", 
+        "description": "Restart pool between groups of 60-80 files",
+        "applies_to": ["src/core/file_processor.py", "src/core/exiftool_pool.py"]
+      },
+      {
+        "name": "Backup Naming",
+        "description": "Use name_backup.ext not name.ext_backup",
+        "applies_to": ["src/core/repair_strategies.py"]
+      },
+      {
+        "name": "Error Tolerant Flags",
+        "description": "Use -ignoreMinorErrors -m for MakerNotes issues",
+        "applies_to": ["src/core/exiftool_process.py"]
+      }
+    ]
+  },
+
+  "testing": {
+    "unit_test_dir": "tests/",
+    "manual_test_scripts": [
+      "tests/test_video_support.py",
+      "tests/test_mixed_media.py", 
+      "tests/test_full_workflow.py"
+    ],
+    "diagnostic_scripts": [
+      "troubleshoot_files.py",
+      "test_corruption_fix.py",
+      "test_exiftool_repair.py",
+      "test_makernotes_fix.py",
+      "debug_filesystem_dates.py"
+    ]
+  },
+
+  "code_style": {
+    "docstrings": "google",
+    "line_length": 100,
+    "type_hints": "preferred",
+    "logging": "use logging module, not print"
+  },
+
+  "warnings": [
+    "Norwegian characters (Ø, Æ, Å) require special Unicode handling",
+    "Windows paths over 250 characters need truncation handling",
+    "ExifTool processes can become zombies - restart pool between groups",
+    "MakerNotes corruption requires -ignoreMinorErrors -m flags",
+    "Backup files must use name_backup.ext pattern to be openable"
+  ]
+}

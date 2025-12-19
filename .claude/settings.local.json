@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(tree:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(for:*)",
+      "Bash(do)",
+      "Bash(echo:*)",
+      "Bash(exiftool:*)",
+      "Bash(done)",
+      "Bash(python:*)",
+      "Bash(timeout 120 python -m pytest:*)"
     ]
   }
 }
