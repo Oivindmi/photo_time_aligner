@@ -49,22 +49,32 @@ jobs:
           pip install pytest pytest-cov psutil
 
       - name: Run performance tests (50 files)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/performance/test_performance_tiers.py::TestPerformanceScale50 -v --tb=short
 
       - name: Run performance tests (200 files)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/performance/test_performance_tiers.py::TestPerformanceScale200 -v --tb=short
 
       - name: Run performance tests (500 files)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/performance/test_performance_tiers.py::TestPerformanceScale500 -v --tb=short
 
       - name: Run memory leak detection tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/performance/test_performance_tiers.py::TestMemoryLeakDetection -v --tb=short
 
       - name: Run all slow tests from error recovery
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/error_recovery/ -m "slow" -v --tb=short
 
@@ -113,6 +123,8 @@ jobs:
           pip install pytest pytest-cov psutil
 
       - name: Run complete error recovery suite
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/error_recovery/ -v --tb=short
 

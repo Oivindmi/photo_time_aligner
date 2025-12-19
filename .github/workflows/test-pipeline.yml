@@ -49,10 +49,14 @@ jobs:
           pip install pytest pytest-cov psutil
 
       - name: Run quick tests (not slow)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/ -m "not slow" -v --tb=short
 
       - name: Run integration tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/integration/ -v --tb=short
 
@@ -99,6 +103,8 @@ jobs:
           pip install pytest pytest-cov psutil
 
       - name: Run all tests with coverage
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/ -v --cov=src --cov-report=xml --cov-report=html --tb=short
 
@@ -160,6 +166,8 @@ jobs:
           pip install pytest pytest-cov psutil
 
       - name: Run Phase D error recovery tests (excluding slow)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/error_recovery/ -m "not slow" -v --tb=short
 
@@ -203,10 +211,14 @@ jobs:
           pip install pytest pytest-cov psutil
 
       - name: Run performance tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest tests/performance/ -v --tb=short
 
       - name: Collect performance baselines
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           mkdir -p .github/performance-baselines
           python -m pytest tests/performance/ -v --tb=short -k baseline 2>&1 | tee .github/performance-baselines/baseline_${{ github.run_id }}.txt
