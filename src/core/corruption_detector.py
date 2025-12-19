@@ -65,6 +65,9 @@ class CorruptionDetector:
     def _detect_single_file_corruption(self, file_path: str) -> CorruptionInfo:
         """Detect corruption in a single file"""
 
+        # Convert Path objects to strings
+        file_path = str(file_path)
+
         # Test 1: Try basic metadata read
         basic_read_success, basic_error = self._test_basic_metadata_read(file_path)
 
@@ -178,6 +181,26 @@ class CorruptionDetector:
         # Limit error message length
         if len(clean_error) > 150:
             clean_error = clean_error[:150] + "..."
+
+        # Check for "Bad format" errors in EXIF entries
+        elif "bad format" in error_lower:
+            return CorruptionInfo(
+                file_path=file_path,
+                corruption_type=CorruptionType.EXIF_STRUCTURE,
+                error_message=clean_error,
+                is_repairable=True,
+                estimated_success_rate=0.6  # Moderate success with aggressive strategies
+            )
+
+        # Check for "Can't currently write" errors (format-specific issues)
+        elif "can't currently write" in error_lower or "can't write" in error_lower or "writing of" in error_lower and "is not yet supported" in error_lower:
+            return CorruptionInfo(
+                file_path=file_path,
+                corruption_type=CorruptionType.FILESYSTEM_ONLY,
+                error_message=clean_error,
+                is_repairable=False,  # Can't repair if we can't write
+                estimated_success_rate=0.0
+            )
 
         # MakerNotes issues
         if "makernotes" in error_lower or "offsets may be incorrect" in error_lower:
