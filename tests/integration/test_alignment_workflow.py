@@ -291,8 +291,12 @@ class TestAlignmentWorkflow:
         """
         Test reference file loading and field synchronization:
         1. Load reference file with known metadata
-        2. Synchronize metadata fields (no offset applied)
-        3. Verify reference file metadata accessible
+        2. Synchronize metadata fields (no offset applied, so 0 change)
+        3. Verify reference field on reference file does NOT change
+
+        Expected behavior:
+        - Reference field (DateTimeOriginal) on reference file: UNCHANGED
+        - All other files' reference field: Synchronized to match reference
         """
         if real_photo_file is None:
             pytest.skip("Real photo file not available")
@@ -302,30 +306,34 @@ class TestAlignmentWorkflow:
         ref_file = temp_alignment_dir / "reference_load_test.jpg"
         shutil.copy2(real_photo_file, ref_file)
 
-        # Get datetime before processing
+        # Get reference field value BEFORE processing
+        reference_field = "DateTimeOriginal"
         try:
-            datetime_fields = exif_handler_live.get_datetime_fields(str(ref_file))
-            datetime_before = next(iter(datetime_fields.values())) if datetime_fields else None
+            datetime_fields_before = exif_handler_live.get_datetime_fields(str(ref_file))
+            reference_value_before = datetime_fields_before.get(reference_field) if datetime_fields_before else None
         except:
-            datetime_before = None
+            reference_value_before = None
 
-        # Process with no offset (reference files get 0 offset)
+        # Process with no offset (0 offset means no time change)
         status = processor.process_files(
             reference_files=[str(ref_file)],
             target_files=[],
-            reference_field="DateTimeOriginal",
-            target_field="DateTimeOriginal",
+            reference_field=reference_field,
+            target_field=reference_field,
             time_offset=timedelta(0),
             progress_callback=None
         )
 
-        # Verify reference datetime unchanged
+        # Verify reference field on reference file UNCHANGED
+        # (with 0 offset, reference field should not change on reference file)
         try:
-            datetime_fields = exif_handler_live.get_datetime_fields(str(ref_file))
-            datetime_after = next(iter(datetime_fields.values())) if datetime_fields else None
+            datetime_fields_after = exif_handler_live.get_datetime_fields(str(ref_file))
+            reference_value_after = datetime_fields_after.get(reference_field) if datetime_fields_after else None
         except:
-            datetime_after = None
+            reference_value_after = None
 
-        if datetime_before is not None and datetime_after is not None:
-            # Reference files should not change
-            assert datetime_before == datetime_after, "Reference file datetime should not change"
+        if reference_value_before is not None and reference_value_after is not None:
+            # The reference field on the reference file should not change with 0 offset
+            assert reference_value_before == reference_value_after, \
+                f"Reference field '{reference_field}' should not change on reference file with 0 offset. " \
+                f"Before: {reference_value_before}, After: {reference_value_after}"
