@@ -7,6 +7,34 @@ on:
     branches: [ master, main, develop ]
 
 jobs:
+  # Check commit message to determine test mode
+  check-test-mode:
+    name: Determine Test Mode
+    runs-on: ubuntu-latest
+    outputs:
+      quick-mode: ${{ steps.check-message.outputs.quick-mode }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit message for [full] keyword
+        id: check-message
+        run: |
+          # Get the commit message
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Check if it contains [full] for comprehensive testing
+          if [[ "$COMMIT_MSG" == *"[full]"* ]]; then
+            echo "quick-mode=false" >> $GITHUB_OUTPUT
+            echo "✓ Full mode enabled - running all tests (comprehensive)"
+          else
+            echo "quick-mode=true" >> $GITHUB_OUTPUT
+            echo "✓ Quick mode enabled - running fast tests only (default)"
+          fi
+
   quick-tests:
     name: Quick Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
@@ -64,7 +92,8 @@ jobs:
     name: Full Test Suite (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    needs: quick-tests
+    needs: [ quick-tests, check-test-mode ]
+    if: needs.check-test-mode.outputs.quick-mode == 'false'
 
     strategy:
       matrix:
@@ -127,7 +156,8 @@ jobs:
     name: Error Recovery Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
-    needs: quick-tests
+    needs: [ quick-tests, check-test-mode ]
+    if: needs.check-test-mode.outputs.quick-mode == 'false'
 
     strategy:
       matrix:
@@ -165,11 +195,11 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov psutil
 
-      - name: Run Phase D error recovery tests (excluding slow)
+      - name: Run Phase D error recovery tests
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          pytest tests/error_recovery/ -m "not slow" -v --tb=short
+          pytest tests/error_recovery/ -v --tb=short
 
       - name: Upload test results
         if: always()
@@ -184,7 +214,8 @@ jobs:
     name: Performance Tests (Ubuntu, Python 3.11)
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    needs: [ quick-tests, check-test-mode ]
+    if: needs.check-test-mode.outputs.quick-mode == 'false'
 
     steps:
       - name: Checkout code
@@ -233,7 +264,7 @@ jobs:
   results-summary:
     name: Test Results Summary
     runs-on: ubuntu-latest
-    needs: [ quick-tests, full-tests, error-recovery-tests ]
+    needs: [ quick-tests, check-test-mode, full-tests, error-recovery-tests ]
     if: always()
 
     steps:
@@ -243,12 +274,30 @@ jobs:
           path: artifacts/
 
       - name: Generate summary
+        env:
+          QUICK_MODE: ${{ needs.check-test-mode.outputs.quick-mode }}
         run: |
           echo "# Test Execution Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$QUICK_MODE" = "true" ]; then
+            echo "**Mode: 🚀 QUICK (Fast Feedback - Default)**" >> $GITHUB_STEP_SUMMARY
+            echo "- Running fast tests only (~5 minutes)" >> $GITHUB_STEP_SUMMARY
+            echo "- Skipping slow/comprehensive tests" >> $GITHUB_STEP_SUMMARY
+            echo "- ✨ Use [full] in commit message for comprehensive testing" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Mode: 🧪 FULL (Comprehensive Testing)**" >> $GITHUB_STEP_SUMMARY
+            echo "- Running all tests including slow/comprehensive ones (~50+ minutes)" >> $GITHUB_STEP_SUMMARY
+            echo "- Full error recovery and performance validation" >> $GITHUB_STEP_SUMMARY
+            echo "- Omit [full] from commit message for faster feedback" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Quick Tests: Passed" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Full Tests: Passed" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Error Recovery Tests: Passed" >> $GITHUB_STEP_SUMMARY
+          if [ "$QUICK_MODE" = "false" ]; then
+            echo "✅ Full Tests: Passed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Error Recovery Tests: Passed" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Artifacts Available:**" >> $GITHUB_STEP_SUMMARY
           echo "- Coverage reports" >> $GITHUB_STEP_SUMMARY
